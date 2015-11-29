@@ -6,34 +6,37 @@ import (
 	"git.eclipse.org/gitroot/paho/org.eclipse.paho.mqtt.golang.git/packets"
 	"github.com/Sirupsen/logrus"
 	"github.com/pborman/uuid"
+	"gopkg.in/mgo.v2/bson"
 	"io"
 	"net"
 	"sync"
 	"time"
-	"gopkg.in/mgo.v2/bson"
 )
 
 var log = logrus.WithField("module", "connection")
 
 type Connection struct {
-	id                    string
-	ClientId              string
-	conn                  net.Conn
-	stop                  chan struct{}
-	errors                chan error
-	workers               sync.WaitGroup
+	id      string
+	conn    net.Conn
+	stop    chan struct{}
+	errors  chan error
+	workers sync.WaitGroup
 
-	Opts                  *Options
+	Opts *Options
 
 	ConnectionLostHandler ConnectionLostHandler
 	PacketHandler         PacketHandler
 	ConnectHandler        ConnectHandler
+	SubscribeHandler      SubscribeHandler
+	PublishHandler        PublishHandler
 
-	in                    chan packets.ControlPacket
-	out                   chan packets.ControlPacket
+	in  chan packets.ControlPacket
+	out chan packets.ControlPacket
 }
 
 type ConnectionLostHandler func(error)
+type PublishHandler func(msgId uint16, topic string, payload []byte, qos byte, retain bool, dup bool) error
+type SubscribeHandler func(msgId uint16, topics []string, qoss []byte) error
 type PacketHandler func(packets.ControlPacket) error
 type ConnectHandler func(*packets.ConnectPacket) error
 
@@ -84,14 +87,14 @@ func (this *Connection) waitConnect() (err error) {
 
 	if code := cp.Validate(); code != packets.Accepted {
 		this.Connack(code, false)
-		return fmt.Errorf("auth failed %d", code)
+		return fmt.Errorf("bad connect packet %x, %q", code, cp.ClientIdentifier)
 	}
 
 	if len(cp.ClientIdentifier) == 0 {
 		cp.ClientIdentifier = bson.NewObjectId().Hex()
 	}
 
-	this.ClientId = cp.ClientIdentifier
+	this.id = cp.ClientIdentifier
 
 	if err = this.ConnectHandler(cp); err != nil {
 		if _, ok := err.(net.Error); !ok {
@@ -107,7 +110,7 @@ func (this *Connection) waitConnect() (err error) {
 }
 
 func (this *Connection) Stop() {
-	this.errors <- errors.New("shutdown")
+	this.close(errors.New("shutdown"))
 }
 
 func (this *Connection) close(err error) {
@@ -123,5 +126,14 @@ func (this *Connection) close(err error) {
 	}
 	if this.ConnectionLostHandler != nil {
 		this.ConnectionLostHandler(err)
+	}
+}
+
+func (this *Connection) workerExit(err error) {
+	select {
+	case <-this.stop:
+		return
+	default:
+		this.errors <- err
 	}
 }

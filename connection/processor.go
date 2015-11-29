@@ -41,15 +41,34 @@ func (this *Connection) process() (err error) {
 func (this *Connection) processPacket(msg packets.ControlPacket) (err error) {
 	switch msg.(type) {
 	case *packets.PublishPacket:
-		log.Debugln("processor: received publish message")
 		p := msg.(*packets.PublishPacket)
+		log.Debugf("processor: received publish message, msgid: %q, topic: %q, qos: %q, cid(%s)", p.MessageID, p.TopicName, p.Qos, this.id)
+
+
 		switch p.Qos {
 		case 0:
-			break
+			if this.PublishHandler != nil {
+				this.PublishHandler(p.MessageID, p.TopicName, p.Payload, p.Qos, p.Retain, p.Dup)
+			}
 		case 1:
+			if p.MessageID == 0 {
+				err = ErrMessageIdInvalid
+				break
+			}
 			err = this.Puback(p.MessageID)
+
+			if this.PublishHandler != nil {
+				this.PublishHandler(p.MessageID, p.TopicName, p.Payload, p.Qos, p.Retain, p.Dup)
+			}
 		case 2:
+			if p.MessageID == 0 {
+				err = ErrMessageIdInvalid
+				break
+			}
 			err = this.Pubrec(p.MessageID)
+			if this.PublishHandler != nil {
+				this.PublishHandler(p.MessageID, p.TopicName, p.Payload, p.Qos, p.Retain, p.Dup)
+			}
 		}
 	case *packets.PubackPacket:
 
@@ -60,7 +79,10 @@ func (this *Connection) processPacket(msg packets.ControlPacket) (err error) {
 	case *packets.PubcompPacket:
 
 	case *packets.SubscribePacket:
-
+		p := msg.(*packets.SubscribePacket)
+		if this.SubscribeHandler != nil {
+			err = this.SubscribeHandler(p.MessageID, p.Topics, p.Qoss)
+		}
 	case *packets.SubackPacket:
 
 	case *packets.UnsubscribePacket:

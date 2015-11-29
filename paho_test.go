@@ -3,14 +3,15 @@ package mqtt
 import (
 	"os"
 	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
 
 	"git.eclipse.org/gitroot/paho/org.eclipse.paho.mqtt.golang.git"
 	"github.com/Sirupsen/logrus"
-	"github.com/astaxie/beego"
 	"github.com/stretchr/testify/assert"
+	"strings"
+	"code.google.com/p/go-uuid/uuid"
+	"runtime"
 )
 
 func init() {
@@ -22,11 +23,9 @@ func init() {
 }
 
 func TestPub(t *testing.T) {
-	count := 20
+	count := 10
 	g := sync.WaitGroup{}
 	g.Add(count)
-	var connected int32
-	beego.NewTree()
 	server := NewServer(&ServerOpts{})
 	go func() {
 		err := server.ListenAndServe("tcp://localhost:1883")
@@ -69,12 +68,18 @@ func TestPub(t *testing.T) {
 
 			log.Infoln("client connected", opts.ClientID)
 
-			atomic.AddInt32(&connected, 1)
+			token = client.Subscribe("a/b/d", 0, func(cli *mqtt.Client, msg mqtt.Message) {
+				log.Println("message received ", msg.Topic(), string(msg.Payload()))
+			})
+
+			token.Wait()
+			assert.NoError(t, token.Error(), "sub failed")
+
 			start := time.Now()
 			messages := 2
 			for _ = range make([]byte, messages) {
 				logrus.Debug("publish")
-				token = client.Publish("hello", 2, false, "world")
+				token = client.Publish("a/b/c", 2, false, "world")
 				token.Wait()
 				assert.NoError(t, token.Error(), "publish")
 				time.Sleep(time.Second)
@@ -89,5 +94,31 @@ func TestPub(t *testing.T) {
 }
 
 func TestConnectPacket(t *testing.T) {
+	log.Println(len(strings.Split("/", "/")))
 	log.Print(uint16(time.Second.Seconds()))
+}
+
+
+func TestMapSearch(t *testing.T) {
+
+	m := make(map[string]string, 10000)
+
+	var search string
+	for i := 0; i< 100000; i++ {
+		id := uuid.New()
+		if i == 1 {
+			search = id
+		}
+		m[id] = uuid.New()
+	}
+
+	start := time.Now()
+	for i := 0; i< 1000000; i++ {
+		_ = m[search]
+	}
+	log.Println(float64(1000000) / time.Now().Sub(start).Seconds())
+
+	stat := runtime.MemStats{}
+	runtime.ReadMemStats(&stat)
+	log.Println(stat.TotalAlloc, stat.Frees)
 }

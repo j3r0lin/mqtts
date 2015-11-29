@@ -4,15 +4,16 @@ import (
 	"fmt"
 	"git.eclipse.org/gitroot/paho/org.eclipse.paho.mqtt.golang.git/packets"
 	"io"
+	"sync/atomic"
 )
 
 func (this *Connection) writer() (err error) {
 	defer func() {
 		if r := recover(); r != nil {
-			this.errors <- fmt.Errorf("mqtt:reader:panic with %v", r)
+			this.workerExit(fmt.Errorf("mqtt:reader:panic with %v", r))
 		}
-		log.Debugln("writer: closed", err)
-		defer this.workers.Done()
+		log.Debugf("writer: closed, %v, (%v)", err, this.id)
+		this.workers.Done()
 	}()
 
 	var cp packets.ControlPacket
@@ -23,9 +24,9 @@ func (this *Connection) writer() (err error) {
 			log.Debug("writer: sending message, ", cp.Details().MessageID)
 			if err = this.writePacket(cp); err != nil {
 				if err != io.EOF {
-					log.Warnln("mqtt:read:error reading from connection", err, this.id)
+					log.Warnln("mqtt:writer:error reading from connection", err, this.id)
 				}
-				this.errors <- err
+				this.workerExit(err)
 				return
 			}
 		case <-this.stop:
@@ -61,12 +62,16 @@ func (this *Connection) Pingresp() error {
 	p := packets.NewControlPacket(packets.Pingresp).(*packets.PingrespPacket)
 	return this.Write(p)
 }
+var globalMessageId uint64 = 1
 
 func (this *Connection) Publish(topic string, payload []byte, qos byte, messageId uint16, retain bool) error {
 	p := packets.NewControlPacket(packets.Publish).(*packets.PublishPacket)
 	p.TopicName = topic
 	p.Payload = payload
 	p.Qos = qos
+	if messageId == 0 && qos > 0 {
+		messageId = uint16(atomic.AddUint64(&globalMessageId, 1) & 0xffff)
+	}
 	p.MessageID = messageId
 	p.Retain = retain
 	return this.Write(p)
@@ -100,5 +105,12 @@ func (this *Connection) Pubrel(messageId uint16, dup bool) error {
 func (this *Connection) Unsuback(messageId uint16) error {
 	cp := packets.NewControlPacket(packets.Unsuback).(*packets.UnsubackPacket)
 	cp.MessageID = messageId
+	return this.Write(cp)
+}
+
+func (this *Connection) Suback(messageId uint16, qoss []byte) error {
+	cp := packets.NewControlPacket(packets.Suback).(*packets.SubackPacket)
+	cp.MessageID = messageId
+	cp.GrantedQoss = qoss
 	return this.Write(cp)
 }

@@ -24,6 +24,8 @@ type Server struct {
 	// gracefully shut them down if they are still alive when the server goes down.
 	clients map[string]*client
 
+	subhier *subhier
+
 	// Mutex for updating svcs
 	mu sync.Mutex
 }
@@ -50,6 +52,7 @@ func NewServer(opts *ServerOpts) *Server {
 
 	server.quit = make(chan struct{})
 	server.clients = make(map[string]*client)
+	server.subhier = newSubhier()
 
 	return server
 }

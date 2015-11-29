@@ -7,6 +7,7 @@ import (
 	"time"
 	"io"
 	"net"
+	"fmt"
 )
 
 func (this *Connection) reader() (err error) {
@@ -14,7 +15,7 @@ func (this *Connection) reader() (err error) {
 		log.Debug("reader: stopped, ", err)
 		if r := recover(); r != nil {
 			log.Warn("reader: panic with", r)
-
+			this.workerExit(fmt.Errorf("reader panic %v", r))
 		}
 		this.workers.Done()
 	}()
@@ -27,18 +28,18 @@ func (this *Connection) reader() (err error) {
 			switch err.(type) {
 			case net.Error:
 				if err.(net.Error).Timeout() {
-					log.Debug("reader: client keepalive timeout, ", this.ClientId)
+					log.Debug("reader: client keepalive timeout, ", this.id)
 					err = errors.New("keepalive timeout")
 				}
 			default:
 				if err != io.EOF {
-					log.Warnln("reader: error reading from connection", err, this.id)
+					log.Warnf("reader: error(%v) reading from connection (%v)", err, this.id)
 				}
 			}
 
 			break
 		}
-		log.Debugln("reader: new packet received, queue len:", len(this.in))
+		log.Debugf("reader: new packet received, queue len:%v, %v", len(this.in), this.id)
 
 		this.in <- cp
 		if _, ok := cp.(*packets.DisconnectPacket); ok {
@@ -52,7 +53,7 @@ func (this *Connection) reader() (err error) {
 		return
 	// Not trying to disconnect, send the error to the errors channel
 	default:
-		this.errors <- err
+		this.workerExit(err)
 		return
 	}
 }
