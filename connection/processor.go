@@ -13,6 +13,7 @@ func (this *Connection) process() (err error) {
 			err = errors.New("processor: panic")
 		}
 		log.Debugf("processor of %q stopped, %v, %v", this.id, err, this.Err())
+		this.conn.Close()
 		go func() {
 			this.Wait()
 			this.close()
@@ -24,7 +25,7 @@ func (this *Connection) process() (err error) {
 		case <- this.Dying():
 			return
 		case msg := <-this.in:
-			log.Debugln("processor: processing new packet", msg.Details().MessageID, reflect.ValueOf(msg).Type())
+			log.Debugf("processor(%v): processing new packet, id:%v, %v", this.id, msg.Details().MessageID, reflect.ValueOf(msg).Type())
 			if err = this.processPacket(msg); err != nil {
 				return
 			}

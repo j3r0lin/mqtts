@@ -3,9 +3,9 @@ package mqtt
 import (
 	"bitbucket.org/j3r0lin/mqtt/connection"
 	"git.eclipse.org/gitroot/paho/org.eclipse.paho.mqtt.golang.git/packets"
-	"github.com/dropbox/godropbox/errors"
 	"net"
 	"sync"
+	"errors"
 )
 
 type client struct {
@@ -88,21 +88,22 @@ func (this *client) handleConnectPacket(p *packets.ConnectPacket) error {
 		this.will = will
 	}
 
-	this.server.mu.Lock()
+//	this.server.mu.Lock()
+//	defer this.server.mu.Unlock()
 	if _, ok := this.server.clients[id]; ok {
-		this.server.mu.Unlock()
+//		this.server.mu.Unlock()
+//		pre.conn.Stop()
 		return errors.New("already connect")
 	} else {
 		this.server.clients[id] = this
-		this.server.mu.Unlock()
+//		this.server.mu.Unlock()
 	}
 
+	log.Infof("client connect %q, %q %q, clean %v", p.Username, string(p.Password), p.ClientIdentifier, this.clean)
 	if this.clean {
 		this.server.cleanSeassion(this)
-		log.Infof("client connect %q, %q %q, clean %v", p.Username, string(p.Password), p.ClientIdentifier, this.clean)
 		this.conn.Connack(packets.Accepted, false)
 	} else {
-		log.Infof("client connect %q, %q %q, clean %v", p.Username, string(p.Password), p.ClientIdentifier, this.clean)
 		this.conn.Connack(packets.Accepted, true)
 		this.server.forwardOfflineMessage(this)
 	}
@@ -128,7 +129,6 @@ func (this *client) handleSubscribe(msgid uint16, topics []string, qoss []byte) 
 
 func (this *client) handlePublish(message *packets.PublishPacket) error {
 	log.Debugf("publish messge received, topic: %q, id: %q, cid(%v)", message.TopicName, message.MessageID, this.id)
-	log.Debugln(message)
 	this.server.storePacket(message)
 
 	// forward message to all subscribers

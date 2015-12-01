@@ -105,14 +105,20 @@ func (this *Connection) waitConnect() (err error) {
 }
 
 func (this *Connection) Stop() error {
-	this.Kill(errors.New("shutdown"))
-	return this.Wait()
+	if this.Alive() {
+		this.Kill(errors.New("shutdown"))
+		return this.Wait()
+	}
+	this.close()
+	return nil
 }
 
 func (this *Connection) close() {
 	err := this.Err()
 	log.Debug("closing connection, ", err)
 	this.conn.Close()
+	close(this.in)
+	close(this.out)
 
 	if err == io.EOF || err == io.ErrUnexpectedEOF {
 		log.Info("client closed the connection")
