@@ -20,8 +20,8 @@ func init() {
 func main() {
 	go func() {
 		pprof.Lookup("gorutine")
-		logrus.Println(http.ListenAndServe("localhost:6060", nil))
+		logrus.Println(http.ListenAndServe("0.0.0.0:6060", nil))
 	}()
 	server := mqtt.NewServer(&mqtt.ServerOpts{})
-	server.ListenAndServe("tcp://localhost:1883")
+	server.ListenAndServe("tcp://0.0.0.0:1883")
 }
