@@ -31,12 +31,6 @@ func (this *memstore) StoreSubscriptions(client *client) {
 	if client.clean {
 		return
 	}
-	//
-	//	clientSubKey := "client:sub:" + client.id
-	//	this.db.Update(func(tx *bolt.Tx) error {
-	//		this.messages.Put([]byte(clientSubKey), )
-	//		return nil
-	//	})
 }
 
 func (this *memstore) LookupSubscriptions(client *client) {
@@ -63,10 +57,8 @@ func (this *memstore) StoreOfflinePacket(id string, message *packets.PublishPack
 
 func (this *memstore) StreamOfflinePackets(id string, callback func(*packets.PublishPacket)) {
 	if v, ok := this.messages[id]; ok {
-		log.Println(len(v))
 		for _, message := range v {
-			log.Println(message, 111111)
-			callback(message)
+			go callback(message)
 		}
 	}
 }
