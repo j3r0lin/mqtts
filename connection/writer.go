@@ -9,11 +9,10 @@ import (
 
 func (this *Connection) writer() (err error) {
 	defer func() {
-		if r := recover(); r != nil {
-			this.workerExit(fmt.Errorf("mqtt:reader:panic with %v", r))
+		if r := recover(); r != nil && err == nil {
+			err = fmt.Errorf("mqtt:reader:panic with %v", r)
 		}
-		log.Debugf("writer: closed, %v, (%v)", err, this.id)
-		this.workers.Done()
+		log.Debugf("writer of %q stopped, %v, %v", this.id, err, this.Err())
 	}()
 
 	var cp packets.ControlPacket
@@ -24,12 +23,11 @@ func (this *Connection) writer() (err error) {
 			log.Debug("writer: sending message, ", cp.Details().MessageID)
 			if err = this.writePacket(cp); err != nil {
 				if err != io.EOF {
-					log.Warnln("mqtt:writer:error reading from connection", err, this.id)
+					log.Warnf("writer:error writting message to connection %v %q", err, this.id)
 				}
-				this.workerExit(err)
 				return
 			}
-		case <-this.stop:
+		case <-this.Dying():
 			return
 		}
 	}
@@ -44,7 +42,10 @@ func (this *Connection) writePacket(p packets.ControlPacket) error {
 }
 
 func (this *Connection) Write(p packets.ControlPacket) error {
-	this.out <- p
+	select {
+	case this.out <- p:
+	default:
+	}
 	log.Debug("writer: message sended to queue")
 	return nil
 }
@@ -62,6 +63,7 @@ func (this *Connection) Pingresp() error {
 	p := packets.NewControlPacket(packets.Pingresp).(*packets.PingrespPacket)
 	return this.Write(p)
 }
+
 var globalMessageId uint64 = 1
 
 func (this *Connection) Publish(topic string, payload []byte, qos byte, messageId uint16, retain bool) error {

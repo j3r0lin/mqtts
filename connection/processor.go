@@ -9,31 +9,25 @@ import (
 
 func (this *Connection) process() (err error) {
 	defer func() {
-		log.Debugln("processor: closed", err)
-		this.workers.Done()
 		if r := recover(); r != nil {
 			err = errors.New("processor: panic")
 		}
-		this.close(err)
+		log.Debugf("processor of %q stopped, %v, %v", this.id, err, this.Err())
+		go func() {
+			this.Wait()
+			this.close()
+		}()
 	}()
 
 	for {
 		select {
+		case <- this.Dying():
+			return
 		case msg := <-this.in:
 			log.Debugln("processor: processing new packet", msg.Details().MessageID, reflect.ValueOf(msg).Type())
 			if err = this.processPacket(msg); err != nil {
-				//					if err == errDisconnect {
-				//						log.Errorf("(%s) Error processing %s: %v", this.cid(), msg.Name(), err)
-				//					} else {
-				//						return
-				//					}
 				return
 			}
-		case <-this.stop:
-			err = errors.New("stop message")
-			return
-		case err = <-this.errors:
-			return
 		}
 	}
 }
@@ -43,7 +37,6 @@ func (this *Connection) processPacket(msg packets.ControlPacket) (err error) {
 	case *packets.PublishPacket:
 		p := msg.(*packets.PublishPacket)
 		log.Debugf("processor: received publish message, msgid: %q, topic: %q, qos: %q, cid(%s)", p.MessageID, p.TopicName, p.Qos, this.id)
-
 
 		switch p.Qos {
 		case 0:

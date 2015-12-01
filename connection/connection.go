@@ -9,18 +9,17 @@ import (
 	"gopkg.in/mgo.v2/bson"
 	"io"
 	"net"
-	"sync"
 	"time"
+	"gopkg.in/tomb.v2"
 )
 
 var log = logrus.WithField("module", "connection")
 
 type Connection struct {
+	tomb.Tomb
+
 	id      string
 	conn    net.Conn
-	stop    chan struct{}
-	errors  chan error
-	workers sync.WaitGroup
 
 	Opts *Options
 
@@ -48,8 +47,6 @@ func NewConnection(conn net.Conn, opts *Options) *Connection {
 		id:     uuid.New(),
 		conn:   conn,
 		Opts:   opts,
-		errors: make(chan error),
-		stop:   make(chan struct{}),
 	}
 }
 
@@ -62,21 +59,16 @@ func (this *Connection) SetConnectHandler(handler ConnectHandler) {
 
 func (this *Connection) Start() (err error) {
 
-	this.in = make(chan packets.ControlPacket, 10)
-	this.out = make(chan packets.ControlPacket, 10)
+	this.in = make(chan packets.ControlPacket, 1000)
+	this.out = make(chan packets.ControlPacket, 1000)
 
 	if err = this.waitConnect(); err != nil {
 		return
 	}
 
-	this.workers.Add(1)
-	go this.reader()
-
-	this.workers.Add(1)
-	go this.writer()
-
-	this.workers.Add(1)
-	go this.process()
+	this.Go(this.reader)
+	this.Go(this.writer)
+	this.Go(this.process)
 
 	return nil
 }
@@ -112,31 +104,24 @@ func (this *Connection) waitConnect() (err error) {
 	return nil
 }
 
-func (this *Connection) Stop() {
-	this.close(errors.New("shutdown"))
+func (this *Connection) Stop() error {
+	this.Kill(errors.New("shutdown"))
+	return this.Wait()
 }
 
-func (this *Connection) close(err error) {
+func (this *Connection) close() {
+	err := this.Err()
 	log.Debug("closing connection, ", err)
 	this.conn.Close()
-	close(this.stop)
-	this.workers.Wait()
 
 	if err == io.EOF || err == io.ErrUnexpectedEOF {
 		log.Info("client closed the connection")
 	} else {
 		log.Info("client connection closed, ", err)
 	}
+
 	if this.ConnectionLostHandler != nil {
 		this.ConnectionLostHandler(err)
 	}
 }
 
-func (this *Connection) workerExit(err error) {
-	select {
-	case <-this.stop:
-		return
-	default:
-		this.errors <- err
-	}
-}

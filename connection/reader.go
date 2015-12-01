@@ -2,28 +2,25 @@ package conn
 
 import (
 	"errors"
-
+	"fmt"
 	"git.eclipse.org/gitroot/paho/org.eclipse.paho.mqtt.golang.git/packets"
-	"time"
 	"io"
 	"net"
-	"fmt"
+	"time"
 )
 
 func (this *Connection) reader() (err error) {
 	defer func() {
-		log.Debug("reader: stopped, ", err)
-		if r := recover(); r != nil {
-			log.Warn("reader: panic with", r)
-			this.workerExit(fmt.Errorf("reader panic %v", r))
+		if r := recover(); r != nil && err == nil {
+			err = fmt.Errorf("reader panic %v", r)
 		}
-		this.workers.Done()
+		log.Debugf("reader of %q stopped, %v, %v", this.id, err, this.Err())
 	}()
 
 	var cp packets.ControlPacket
 
 	for {
-		timeout := this.Opts.KeepAlive + (this.Opts.KeepAlive) / 2
+		timeout := this.Opts.KeepAlive + (this.Opts.KeepAlive)/2
 		if cp, err = this.readPacket(timeout); err != nil {
 			switch err.(type) {
 			case net.Error:
@@ -41,26 +38,28 @@ func (this *Connection) reader() (err error) {
 		}
 		log.Debugf("reader: new packet received, queue len:%v, %q", len(this.in), this.id)
 
-		this.in <- cp
+		select {
+		case this.in <- cp:
+			break
+		default:
+			log.Warnf("reader queue full, drop message. cid(%v)", this.id)
+		}
 		if _, ok := cp.(*packets.DisconnectPacket); ok {
 			return ErrDisconnect
 		}
 	}
-	// We received an error on read.
-	// If disconnect is in progress, swallow error and return
+
 	select {
-	case <-this.stop:
+	case <-this.Dying():
 		return
-	// Not trying to disconnect, send the error to the errors channel
 	default:
-		this.workerExit(err)
 		return
 	}
 }
 
 // read one message from stream
 func (this *Connection) readPacket(timeout time.Duration) (cp packets.ControlPacket, err error) {
-//	log.Debug("read packet with timeout ", timeout)
+	//	log.Debug("read packet with timeout ", timeout)
 	this.conn.SetReadDeadline(time.Now().Add(timeout))
 	cp, err = packets.ReadPacket(this.conn)
 	this.conn.SetReadDeadline(time.Time{})
