@@ -63,6 +63,7 @@ func (this *Connection) Start() (err error) {
 	this.out = make(chan packets.ControlPacket, 1000)
 
 	if err = this.waitConnect(); err != nil {
+		this.close()
 		return
 	}
 

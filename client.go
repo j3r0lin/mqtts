@@ -45,7 +45,6 @@ func (this *client) start(c net.Conn) error {
 
 	if err := conn.Start(); err != nil {
 		log.Warnln("client start connection failed", err)
-		conn.Stop()
 		return err
 	}
 
