@@ -1,13 +1,13 @@
 package mqtt
 
 import (
+	"github.com/Sirupsen/logrus"
 	"net"
 	"net/url"
+	"runtime"
 	"sync"
 	"time"
-
-	"github.com/Sirupsen/logrus"
-	"runtime"
+	"git.eclipse.org/gitroot/paho/org.eclipse.paho.mqtt.golang.git/packets"
 )
 
 var log = logrus.WithField("module", "mqtt")
@@ -22,7 +22,9 @@ type Server struct {
 
 	// A list of services created by the server. We keep track of them so we can
 	// gracefully shut them down if they are still alive when the server goes down.
-	clients map[string]*client
+	clients  map[string]*client
+	offlines map[string]*client
+	store    Store
 
 	subhier *subhier
 
@@ -52,7 +54,9 @@ func NewServer(opts *ServerOpts) *Server {
 
 	server.quit = make(chan struct{})
 	server.clients = make(map[string]*client)
+	server.offlines = make(map[string]*client)
 	server.subhier = newSubhier()
+	server.store = newMemStore()
 
 	return server
 }
@@ -135,4 +139,63 @@ func (this *Server) handleConnection(conn net.Conn) (cli *client, err error) {
 	}
 
 	return nil, nil
+}
+
+
+func (this *Server ) storePacket(message *packets.PublishPacket) {
+	if message.Retain {
+		retain(message)
+	}
+
+	if message.Qos != 0 {
+		l, err := this.subhier.search(message.TopicName, message.Qos)
+		if err != nil {
+			return
+		}
+
+		for e := l.Front(); e != nil; e = e.Next() {
+			if sub, ok := e.Value.(*subscribe); ok {
+				cli := sub.client
+				this.store.StoreOfflinePacket(cli.id, message)
+			}
+		}
+	}
+}
+
+func (this *Server ) deleteOfflinePacket(clientId string, messageId uint16) {
+	this.store.DeleteOfflinePacket(clientId, messageId)
+}
+
+func (this *Server ) forwardMessage(message *packets.PublishPacket) {
+	l, err := this.subhier.search(message.TopicName, message.Qos)
+	if err != nil {
+		return
+	}
+
+	for e := l.Front(); e != nil; e = e.Next() {
+		if sub, ok := e.Value.(*subscribe); ok {
+			cli := sub.client
+			qos := sub.qos
+			if c, ok := this.clients[cli.id]; ok && !c.closed {
+				log.Debugf("forward message to %q, topic: %q, qos: %q, msgid: %q ", cli.id, message.TopicName, qos, message.MessageID)
+				cli.conn.Publish(message.TopicName, message.Payload, qos, message.MessageID, message.Retain)
+			}
+		}
+	}
+}
+
+func (this *Server ) forwardOfflineMessage(c *client) {
+	if c.clean {
+		return
+	}
+	log.Infof("forward offline message of %q", c.id)
+	this.store.StreamOfflinePackets(c.id, func(message *packets.PublishPacket){
+		log.Debugf("forward offline message to %q, topic: %q, qos: %q, msgid: %q ", c.id, message.TopicName, message.Qos, message.MessageID)
+		c.conn.Publish(message.TopicName, message.Payload, message.Qos, message.MessageID, message.Retain)
+	})
+}
+
+func (this *Server ) cleanSeassion(c *client) {
+	this.subhier.clean(c)
+	this.store.CleanOfflinePacket(c.id)
 }

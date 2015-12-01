@@ -29,13 +29,16 @@ type Connection struct {
 	ConnectHandler        ConnectHandler
 	SubscribeHandler      SubscribeHandler
 	PublishHandler        PublishHandler
+	PubackHandler        PubackHandler
+
 
 	in  chan packets.ControlPacket
 	out chan packets.ControlPacket
 }
 
 type ConnectionLostHandler func(error)
-type PublishHandler func(msgId uint16, topic string, payload []byte, qos byte, retain bool, dup bool) error
+type PublishHandler func(*packets.PublishPacket) error
+type PubackHandler func(messageId uint16) error
 type SubscribeHandler func(msgId uint16, topics []string, qoss []byte) error
 type PacketHandler func(packets.ControlPacket) error
 type ConnectHandler func(*packets.ConnectPacket) error
@@ -59,12 +62,12 @@ func (this *Connection) SetConnectHandler(handler ConnectHandler) {
 
 func (this *Connection) Start() (err error) {
 
+	this.in = make(chan packets.ControlPacket, 10)
+	this.out = make(chan packets.ControlPacket, 10)
+
 	if err = this.waitConnect(); err != nil {
 		return
 	}
-
-	this.in = make(chan packets.ControlPacket, 10)
-	this.out = make(chan packets.ControlPacket, 10)
 
 	this.workers.Add(1)
 	go this.reader()

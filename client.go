@@ -9,20 +9,22 @@ import (
 )
 
 type client struct {
-	id      string
+	id string
 
 	opts    *ServerOpts
 	conn    *conn.Connection
 	started sync.WaitGroup
 	stopped sync.WaitGroup
 
-	topics  []string
+	topics []string
+	clean  bool
+	will   *packets.PublishPacket
 
-	server  *Server
+	server *Server
 
-	mu      sync.Mutex
-	closed  bool
-	stop    chan struct{}
+	mu     sync.Mutex
+	closed bool
+	stop   chan struct{}
 }
 
 func (this *client) start(c net.Conn) error {
@@ -38,6 +40,7 @@ func (this *client) start(c net.Conn) error {
 	conn.ConnectHandler = this.handleConnectPacket
 	conn.SubscribeHandler = this.handleSubscribe
 	conn.PublishHandler = this.handlePublish
+	conn.PubackHandler = this.handlePuback
 	conn.ConnectionLostHandler = this.handleConnectionLost
 
 	if err := conn.Start(); err != nil {
@@ -50,12 +53,18 @@ func (this *client) start(c net.Conn) error {
 }
 
 func (this *client) handleConnectionLost(err error) {
+	if this.will != nil {
+		this.handlePublish(this.will)
+	}
+
 	this.server.mu.Lock()
 	delete(this.server.clients, this.id)
 	this.server.mu.Unlock()
-	for _, topic := range this.topics {
-		this.server.subhier.unsubscribe(topic, this)
+	if this.clean {
+		this.server.cleanSeassion(this)
 	}
+
+	this.closed = true
 
 	log.Infoln("client disconnect", err)
 }
@@ -67,6 +76,18 @@ func (this *client) handleConnectPacket(p *packets.ConnectPacket) error {
 	id := p.ClientIdentifier
 	this.id = id
 
+	this.clean = p.CleanSession
+
+	if p.WillFlag && len(p.WillTopic) != 0 {
+		will := packets.NewControlPacket(packets.Publish).(*packets.PublishPacket)
+		will.TopicName = p.WillTopic
+		will.Payload = p.WillMessage
+		will.Qos = p.WillQos
+		will.Retain = p.WillRetain
+
+		this.will = will
+	}
+
 	this.server.mu.Lock()
 	if _, ok := this.server.clients[id]; ok {
 		this.server.mu.Unlock()
@@ -76,8 +97,17 @@ func (this *client) handleConnectPacket(p *packets.ConnectPacket) error {
 		this.server.mu.Unlock()
 	}
 
-	log.Infof("client connect %q, %q %s", p.Username, string(p.Password), p.ClientIdentifier)
-	return this.conn.Connack(packets.Accepted, false)
+	if this.clean {
+		this.server.cleanSeassion(this)
+		log.Infof("client connect %q, %q %q, clean %v", p.Username, string(p.Password), p.ClientIdentifier, this.clean)
+		this.conn.Connack(packets.Accepted, false)
+	} else {
+		log.Infof("client connect %q, %q %q, clean %v", p.Username, string(p.Password), p.ClientIdentifier, this.clean)
+		this.conn.Connack(packets.Accepted, true)
+		this.server.forwardOfflineMessage(this)
+	}
+
+	return nil
 }
 
 func (this *client) handleSubscribe(msgid uint16, topics []string, qoss []byte) error {
@@ -88,18 +118,26 @@ func (this *client) handleSubscribe(msgid uint16, topics []string, qoss []byte) 
 			return err
 		}
 		this.topics = append(this.topics, topic)
+		matchRetain(topic, func(message *packets.PublishPacket) {
+			this.conn.Publish(message.TopicName, message.Payload, message.Qos, message.MessageID, message.Retain)
+		})
 	}
 	this.conn.Suback(msgid, qoss)
 	return nil
 }
 
-func (this *client ) handlePublish(msgId uint16, topic string, payload []byte, qos byte, retain bool, dup bool) error {
-	log.Debugf("publish messge received, topic: %q, id: %q, cid(%v)", topic, msgId, this.id)
-	this.server.subhier.search(topic, qos, func(subs *subscribes) {
-		subs.forEach(func(cli *client, qos byte) {
-			log.Debugf("forward message to %q, topic: %q, qos: %q, msgid: %q ", cli.id, topic, qos, msgId)
-			cli.conn.Publish(topic, payload, qos, msgId, retain)
-		})
-	})
+func (this *client) handlePublish(message *packets.PublishPacket) error {
+	log.Debugf("publish messge received, topic: %q, id: %q, cid(%v)", message.TopicName, message.MessageID, this.id)
+	log.Debugln(message)
+	this.server.storePacket(message)
+
+	// forward message to all subscribers
+	this.server.forwardMessage(message)
+
+	return nil
+}
+
+func (this *client) handlePuback(messageId uint16) error {
+	this.server.deleteOfflinePacket(this.id, messageId)
 	return nil
 }

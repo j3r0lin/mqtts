@@ -39,7 +39,7 @@ func (this *Connection) reader() (err error) {
 
 			break
 		}
-		log.Debugf("reader: new packet received, queue len:%v, %v", len(this.in), this.id)
+		log.Debugf("reader: new packet received, queue len:%v, %q", len(this.in), this.id)
 
 		this.in <- cp
 		if _, ok := cp.(*packets.DisconnectPacket); ok {

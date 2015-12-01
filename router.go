@@ -3,7 +3,7 @@ package mqtt
 import (
 	"errors"
 	"strings"
-	"git.eclipse.org/gitroot/paho/org.eclipse.paho.mqtt.golang.git/packets"
+	"container/list"
 )
 
 type subscribe struct {
@@ -14,7 +14,6 @@ type subscribe struct {
 type subscribes struct {
 	subs map[string]*subscribe
 }
-
 
 func newSubscribes() *subscribes {
 	return &subscribes{make(map[string]*subscribe)}
@@ -103,36 +102,39 @@ func (this *subhier) processUnSubscribe(paths []string, cli *client) error {
 	return nil
 }
 
-func (this *subhier) search(topic string, qos byte, callback func(*subscribes)) error {
+func (this *subhier) search(topic string, qos byte) (result *list.List, err error) {
 	tokens, err := topicTokenise(topic)
 	if err != nil {
-		return err
+		return
 	}
-	this.match(tokens, callback)
-	return nil
+	result = list.New()
+	this.match(tokens, result)
+	return
 }
 
-func (this *subhier) match(paths []string, callback func(*subscribes)) {
+func (this *subhier) match(paths []string, result *list.List) {
 	if len(paths) == 0 {
-		callback(this.subs)
+		for _, sub := range this.subs.subs {
+			result.PushBack(sub)
+		}
 		return
 	}
 
 	path := paths[0]
 
 	if wildcards, ok := this.routes["#"]; ok {
-		callback(wildcards.subs)
+		wildcards.match([]string{}, result)
 	}
 
 	if wildcards, ok := this.routes["+"]; ok {
-		wildcards.match(paths[1:], callback)
+		wildcards.match(paths[1:], result)
 	}
 
 	if _, ok := this.routes[path]; !ok {
 		return
 	}
 
-	this.routes[path].match(paths[1:], callback)
+	this.routes[path].match(paths[1:], result)
 }
 
 func topicTokenise(topic string) (tokens []string, err error) {
@@ -155,4 +157,11 @@ func topicTokenise(topic string) (tokens []string, err error) {
 		}
 	}
 	return
+}
+
+func (this *subhier ) clean(c *client) {
+	this.subs.remove(c)
+	for _, route := range this.routes {
+		route.clean(c)
+	}
 }

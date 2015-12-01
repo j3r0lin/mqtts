@@ -48,7 +48,7 @@ func (this *Connection) processPacket(msg packets.ControlPacket) (err error) {
 		switch p.Qos {
 		case 0:
 			if this.PublishHandler != nil {
-				this.PublishHandler(p.MessageID, p.TopicName, p.Payload, p.Qos, p.Retain, p.Dup)
+				this.PublishHandler(p)
 			}
 		case 1:
 			if p.MessageID == 0 {
@@ -58,7 +58,7 @@ func (this *Connection) processPacket(msg packets.ControlPacket) (err error) {
 			err = this.Puback(p.MessageID)
 
 			if this.PublishHandler != nil {
-				this.PublishHandler(p.MessageID, p.TopicName, p.Payload, p.Qos, p.Retain, p.Dup)
+				this.PublishHandler(p)
 			}
 		case 2:
 			if p.MessageID == 0 {
@@ -67,11 +67,14 @@ func (this *Connection) processPacket(msg packets.ControlPacket) (err error) {
 			}
 			err = this.Pubrec(p.MessageID)
 			if this.PublishHandler != nil {
-				this.PublishHandler(p.MessageID, p.TopicName, p.Payload, p.Qos, p.Retain, p.Dup)
+				this.PublishHandler(p)
 			}
 		}
 	case *packets.PubackPacket:
-
+		if this.PubackHandler != nil {
+			p := msg.(*packets.PubackPacket)
+			err = this.PubackHandler(p.MessageID)
+		}
 	case *packets.PubrecPacket:
 		err = this.Pubrel(msg.Details().MessageID, false)
 	case *packets.PubrelPacket:

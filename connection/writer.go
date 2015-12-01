@@ -53,7 +53,7 @@ func (this *Connection) Connack(returnCode byte, sessionPresent bool) error {
 	p := packets.NewControlPacket(packets.Connack).(*packets.ConnackPacket)
 	p.ReturnCode = returnCode
 	if sessionPresent && returnCode == packets.Accepted {
-		p.TopicNameCompression = 1
+		p.TopicNameCompression = 0x01
 	}
 	return this.writePacket(p)
 }

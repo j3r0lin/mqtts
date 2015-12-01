@@ -17,17 +17,17 @@ func TestRouter(t *testing.T) {
 	subhier.subscribe("a/b/#", &client{id: "1"}, 0)
 	subhier.subscribe("#", &client{id: "1"}, 0)
 
-
-	subhier.search("a/b/d/d", 0, func(subs *subscribes) {
-		subs.forEach(func(cli *client, qos byte){
-			log.Println(cli.id, qos)
-		})
-		assert.Equal(t, subs.len(), 1)
-	})
-
-	subhier.search("a/b/c/e", 0, func(subs *subscribes) {
-		assert.Equal(t, subs.len(), 1)
-	})
+//
+//	subhier.search("a/b/d/d", 0, func(subs *subscribes) {
+//		subs.forEach(func(cli *client, qos byte){
+//			log.Println(cli.id, qos)
+//		})
+//		assert.Equal(t, subs.len(), 1)
+//	})
+//
+//	subhier.search("a/b/c/e", 0, func(subs *subscribes) {
+//		assert.Equal(t, subs.len(), 1)
+//	})
 }
 
 func TestNewRouter(t *testing.T) {
@@ -44,12 +44,12 @@ func TestNewRouter(t *testing.T) {
 	log.Println(float64(count) / time.Now().Sub(start).Seconds())
 
 	start = time.Now()
-	for _ = range strings.Repeat("1", count) {
-		err := subhier.search("a/b/c/d/" + id, 0, func(subs *subscribes) {
-			assert.Equal(t, subs.len(), 1)
-		})
-		assert.NoError(t, err)
-	}
+//	for _ = range strings.Repeat("1", count) {
+//		err := subhier.search("a/b/c/d/" + id, 0, func(subs *subscribes) {
+//			assert.Equal(t, subs.len(), 1)
+//		})
+//		assert.NoError(t, err)
+//	}
 	log.Println(float64(count) / time.Now().Sub(start).Seconds())
 
 
