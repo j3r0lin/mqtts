@@ -1,9 +1,10 @@
 package mqtt
 
 import (
+	"container/list"
 	"errors"
 	"strings"
-	"container/list"
+	"sync"
 )
 
 type subscribe struct {
@@ -12,14 +13,17 @@ type subscribe struct {
 }
 
 type subscribes struct {
+	sync.RWMutex
 	subs map[string]*subscribe
 }
 
 func newSubscribes() *subscribes {
-	return &subscribes{make(map[string]*subscribe)}
+	return &subscribes{subs: make(map[string]*subscribe)}
 }
 
 func (this *subscribes) add(client *client, qos byte) {
+	this.Lock()
+	defer this.Unlock()
 	if sub, ok := this.subs[client.id]; ok {
 		sub.qos = qos
 	} else {
@@ -28,6 +32,8 @@ func (this *subscribes) add(client *client, qos byte) {
 }
 
 func (this *subscribes) remove(client *client) {
+	this.Lock()
+	defer this.Unlock()
 	for _, sub := range this.subs {
 		if sub.client.id == client.id {
 			delete(this.subs, client.id)
@@ -37,16 +43,21 @@ func (this *subscribes) remove(client *client) {
 }
 
 func (this *subscribes) len() int {
+	this.RLock()
+	defer this.RUnlock()
 	return len(this.subs)
 }
 
 func (this *subscribes) forEach(callback func(*client, byte)) {
+	this.RLock()
+	defer this.RUnlock()
 	for _, sub := range this.subs {
-		callback(sub.client, sub.qos)
+		go callback(sub.client, sub.qos)
 	}
 }
 
 type subhier struct {
+	sync.RWMutex
 	routes map[string]*subhier
 	subs   *subscribes
 }
@@ -81,10 +92,13 @@ func (this *subhier) processSubscribe(paths []string, cli *client, qos byte) err
 	}
 
 	path := paths[0]
+
+	this.Lock()
 	if _, ok := this.routes[path]; !ok {
 		hire := newSubhier()
 		this.routes[path] = hire
 	}
+	this.Unlock()
 
 	return this.routes[path].processSubscribe(paths[1:], cli, qos)
 }
@@ -159,7 +173,7 @@ func topicTokenise(topic string) (tokens []string, err error) {
 	return
 }
 
-func (this *subhier ) clean(c *client) {
+func (this *subhier) clean(c *client) {
 	this.subs.remove(c)
 	for _, route := range this.routes {
 		route.clean(c)
