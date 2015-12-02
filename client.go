@@ -44,7 +44,7 @@ func (this *client) start(c net.Conn) error {
 	conn.ConnectionLostHandler = this.handleConnectionLost
 
 	if err := conn.Start(); err != nil {
-		log.Warnln("client start connection failed", err)
+		log.Warnf("client(%v) start connection failed", this.id, err)
 		return err
 	}
 
@@ -65,7 +65,7 @@ func (this *client) handleConnectionLost(err error) {
 
 	this.closed = true
 
-	log.Infoln("client disconnect", err)
+	log.Infof("client(%v) disconnect, %v", this.id, err)
 }
 
 func (this *client) handleConnectPacket(p *packets.ConnectPacket) error {
@@ -98,7 +98,7 @@ func (this *client) handleConnectPacket(p *packets.ConnectPacket) error {
 //		this.server.mu.Unlock()
 	}
 
-	log.Infof("client connect %q, %q %q, clean %v", p.Username, string(p.Password), p.ClientIdentifier, this.clean)
+	log.Infof("client(%v) connect %q, %q, clean %v", this.id, p.Username, string(p.Password), this.clean)
 	if this.clean {
 		this.server.cleanSeassion(this)
 		this.conn.Connack(packets.Accepted, false)
@@ -112,9 +112,9 @@ func (this *client) handleConnectPacket(p *packets.ConnectPacket) error {
 
 func (this *client) handleSubscribe(msgid uint16, topics []string, qoss []byte) error {
 	for index, topic := range topics {
-		log.Debugln("client", this.id, "subscribe to", topic, "qos", qoss[index])
+		log.Debugf("client(%v) subscribe to %q qos %q", this.id, topic, qoss[index])
 		if err := this.server.subhier.subscribe(topic, this, qoss[index]); err != nil {
-			log.Warnln("sub failed, disconnecting", err)
+			log.Warnf("client(%v) sub to %q failed, %v, disconnecting", this.id, topic, err)
 			return err
 		}
 		this.topics = append(this.topics, topic)
@@ -127,7 +127,7 @@ func (this *client) handleSubscribe(msgid uint16, topics []string, qoss []byte) 
 }
 
 func (this *client) handlePublish(message *packets.PublishPacket) error {
-	log.Debugf("publish messge received, topic: %q, id: %q, cid(%v)", message.TopicName, message.MessageID, this.id)
+	log.Debugf("client(%v) publish messge received, topic: %q, id: %q", this.id, message.TopicName, message.MessageID)
 	this.server.storePacket(message)
 
 	// forward message to all subscribers

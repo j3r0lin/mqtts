@@ -152,10 +152,12 @@ func (this *Server ) storePacket(message *packets.PublishPacket) {
 		if err != nil {
 			return
 		}
+		log.Debugf("store offline packet, found subs count %v", l.Len())
 
 		for e := l.Front(); e != nil; e = e.Next() {
 			if sub, ok := e.Value.(*subscribe); ok {
 				cli := sub.client
+				log.Debugf("sotre offline packet to %q", cli.id)
 				this.store.StoreOfflinePacket(cli.id, message)
 			}
 		}
@@ -171,6 +173,8 @@ func (this *Server ) forwardMessage(message *packets.PublishPacket) {
 	if err != nil {
 		return
 	}
+
+	log.Debugf("forward message %v to topic %q, clients: %v", message.MessageID, message.TopicName, l.Len())
 
 	for e := l.Front(); e != nil; e = e.Next() {
 		if sub, ok := e.Value.(*subscribe); ok {
@@ -196,6 +200,7 @@ func (this *Server ) forwardOfflineMessage(c *client) {
 }
 
 func (this *Server ) cleanSeassion(c *client) {
+	log.Debugf("clean session of %q", c.id)
 	this.subhier.clean(c)
 	this.store.CleanOfflinePacket(c.id)
 }

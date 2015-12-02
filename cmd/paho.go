@@ -23,5 +23,5 @@ func main() {
 		logrus.Println(http.ListenAndServe("0.0.0.0:6060", nil))
 	}()
 	server := mqtt.NewServer(&mqtt.ServerOpts{})
-	server.ListenAndServe("tcp://0.0.0.0:1883")
+	logrus.Fatal(server.ListenAndServe("tcp://0.0.0.0:1883"))
 }

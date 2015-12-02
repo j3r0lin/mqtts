@@ -47,7 +47,7 @@ func (this *memstore) LookupRetained(topic string, callback func(*packets.Publis
 
 func (this *memstore) StoreOfflinePacket(id string, message *packets.PublishPacket) error {
 	// only store packet that has subscriptions
-	log.Debugf("store off line message msgid %q, cid %q", message.MessageID, id)
+	log.Debugf("memstore(%v) store off line message msgid %q, ", id, message.MessageID)
 	if _, ok := this.messages[id]; !ok {
 		this.messages[id] = make(map[uint16]*packets.PublishPacket)
 	}
@@ -58,7 +58,7 @@ func (this *memstore) StoreOfflinePacket(id string, message *packets.PublishPack
 func (this *memstore) StreamOfflinePackets(id string, callback func(*packets.PublishPacket)) {
 	if v, ok := this.messages[id]; ok {
 		for _, message := range v {
-			go callback(message)
+			callback(message)
 		}
 	}
 }
