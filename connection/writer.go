@@ -5,14 +5,15 @@ import (
 	"git.eclipse.org/gitroot/paho/org.eclipse.paho.mqtt.golang.git/packets"
 	"io"
 	"sync/atomic"
+	"reflect"
 )
 
 func (this *Connection) writer() (err error) {
 	defer func() {
 		if r := recover(); r != nil && err == nil {
-			err = fmt.Errorf("mqtt:reader:panic with %v", r)
+			err = fmt.Errorf("writer panic with %v", r)
 		}
-		log.Debugf("writer of %q stopped, %v, %v", this.id, err, this.Err())
+		log.Debugf("writer(%v) stopped, %v, %v", this.id, err, this.Err())
 	}()
 
 	var cp packets.ControlPacket
@@ -20,10 +21,10 @@ func (this *Connection) writer() (err error) {
 	for {
 		select {
 		case cp = <-this.out:
-			log.Debug("writer: sending message, ", cp.Details().MessageID)
+			log.Debugf("writer(%v) sending message, msgid: %q", this.id, cp.Details().MessageID)
 			if err = this.writePacket(cp); err != nil {
 				if err != io.EOF {
-					log.Warnf("writer:error writting message to connection %v %q", err, this.id)
+					log.Warnf("writer(%v) writting message to connection err, %v %q", this.id, err)
 				}
 				return
 			}
@@ -46,7 +47,7 @@ func (this *Connection) Write(p packets.ControlPacket) error {
 	case this.out <- p:
 	default:
 	}
-	log.Debug("writer: message sended to queue")
+	log.Debugf("writer(%v): message %v sended to queue", this.id, reflect.TypeOf(p))
 	return nil
 }
 

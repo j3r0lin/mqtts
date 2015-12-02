@@ -12,7 +12,7 @@ func (this *Connection) process() (err error) {
 		if r := recover(); r != nil {
 			err = errors.New("processor: panic")
 		}
-		log.Debugf("processor of %q stopped, %v, %v", this.id, err, this.Err())
+		log.Debugf("processor(%v) stopped, %v, %v", this.id, err, this.Err())
 		this.conn.Close()
 		go func() {
 			this.Wait()
@@ -25,7 +25,7 @@ func (this *Connection) process() (err error) {
 		case <- this.Dying():
 			return
 		case msg := <-this.in:
-			log.Debugf("processor(%v): processing new packet, id:%v, %v", this.id, msg.Details().MessageID, reflect.ValueOf(msg).Type())
+			log.Debugf("processor(%v): new packet, id:%v, %v", this.id, msg.Details().MessageID, reflect.ValueOf(msg).Type())
 			if err = this.processPacket(msg); err != nil {
 				return
 			}
@@ -37,7 +37,7 @@ func (this *Connection) processPacket(msg packets.ControlPacket) (err error) {
 	switch msg.(type) {
 	case *packets.PublishPacket:
 		p := msg.(*packets.PublishPacket)
-		log.Debugf("processor: received publish message, msgid: %q, topic: %q, qos: %q, cid(%s)", p.MessageID, p.TopicName, p.Qos, this.id)
+		log.Debugf("processor(%v) new publish message, msgid: %q, topic: %q, qos: %q", this.id, p.MessageID, p.TopicName, p.Qos)
 
 		switch p.Qos {
 		case 0:
@@ -93,11 +93,11 @@ func (this *Connection) processPacket(msg packets.ControlPacket) (err error) {
 	case *packets.DisconnectPacket:
 		return errors.New("Disconnect")
 	default:
-		return fmt.Errorf("(%s) invalid packets type %s.", this.id)
+		return fmt.Errorf("processor(%v) invalid packets type %s.", this.id, reflect.ValueOf(msg).Type())
 	}
 
 	if err != nil {
-		log.Debugf("(%s) Error processing acked packets: %v", this.id, err)
+		log.Debugf("processor(%v) Error processing packets: %v", this.id, err)
 	}
 
 	return

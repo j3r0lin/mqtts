@@ -7,6 +7,7 @@ import (
 	"io"
 	"net"
 	"time"
+	"reflect"
 )
 
 func (this *Connection) reader() (err error) {
@@ -14,7 +15,7 @@ func (this *Connection) reader() (err error) {
 		if r := recover(); r != nil && err == nil {
 			err = fmt.Errorf("reader panic %v", r)
 		}
-		log.Debugf("reader of %q stopped, %v, %v", this.id, err, this.Err())
+		log.Debugf("reader(%v) stopped, %v, %v", this.id, err, this.Err())
 	}()
 
 	var cp packets.ControlPacket
@@ -25,24 +26,24 @@ func (this *Connection) reader() (err error) {
 			switch err.(type) {
 			case net.Error:
 				if err.(net.Error).Timeout() {
-					log.Debug("reader: client keepalive timeout, ", this.id)
+					log.Debugf("reader(%v) client keepalive timeout, ", this.id)
 					err = errors.New("keepalive timeout")
 				}
 			default:
 				if err != io.EOF {
-					log.Warnf("reader: error(%v) reading from connection (%v)", err, this.id)
+					log.Warnf("reader(%v) error(%v) reading from connection", this.id, err)
 				}
 			}
 
 			break
 		}
-		log.Debugf("reader: new packet received, queue len:%v, %q", len(this.in), this.id)
+		log.Debugf("reader(%v) new packet received, %v, queue len:%v", this.id, reflect.TypeOf(cp), len(this.in))
 
 		select {
 		case this.in <- cp:
 			break
 		default:
-			log.Warnf("reader queue full, drop message. cid(%v)", this.id)
+			log.Warnf("reader(%v) queue full, drop message.", this.id)
 		}
 		if _, ok := cp.(*packets.DisconnectPacket); ok {
 			return ErrDisconnect

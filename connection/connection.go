@@ -83,7 +83,7 @@ func (this *Connection) waitConnect() (err error) {
 
 	if code := cp.Validate(); code != packets.Accepted {
 		this.Connack(code, false)
-		return fmt.Errorf("bad connect packet %x, %q", code, cp.ClientIdentifier)
+		return fmt.Errorf("conn(%v) bad connect packet %x, %q", cp.ClientIdentifier, code)
 	}
 
 	if len(cp.ClientIdentifier) == 0 {
@@ -116,15 +116,15 @@ func (this *Connection) Stop() error {
 
 func (this *Connection) close() {
 	err := this.Err()
-	log.Debug("closing connection, ", err)
+	log.Debugf("conn(%v) closing %v", this.id, err)
 	this.conn.Close()
 	close(this.in)
 	close(this.out)
 
 	if err == io.EOF || err == io.ErrUnexpectedEOF {
-		log.Info("client closed the connection")
+		log.Infof("conn(%v) client closed the connection", this.id)
 	} else {
-		log.Info("client connection closed, ", err)
+		log.Infof("conn(%v) client connection closed, %v", this.id, err)
 	}
 
 	if this.ConnectionLostHandler != nil {
