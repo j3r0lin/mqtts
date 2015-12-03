@@ -1,19 +1,21 @@
 package mqtt
 
 import (
+	"git.eclipse.org/gitroot/paho/org.eclipse.paho.mqtt.golang.git/packets"
 	"github.com/Sirupsen/logrus"
 	"net"
 	"net/url"
 	"runtime"
 	"sync"
 	"time"
-	"git.eclipse.org/gitroot/paho/org.eclipse.paho.mqtt.golang.git/packets"
 )
 
 var log = logrus.WithField("module", "mqtt")
 
 type Server struct {
-	opts *ServerOpts
+	sync.RWMutex
+
+	opts *Options
 	// The quit channel for the server. If the server detects that this channel
 	// is closed, then it's a signal for it to shutdown as well.
 	quit chan struct{}
@@ -29,10 +31,9 @@ type Server struct {
 	subhier *subhier
 
 	// Mutex for updating svcs
-	mu sync.Mutex
 }
 
-func NewServer(opts *ServerOpts) *Server {
+func NewServer(opts *Options) *Server {
 	server := &Server{}
 	server.opts = opts
 
@@ -118,7 +119,7 @@ func (this *Server) stat() error {
 	return nil
 }
 
-func (this *Server) handleConnection(conn net.Conn) (cli *client, err error) {
+func (this *Server) handleConnection(conn net.Conn) (c *client, err error) {
 	defer func() {
 		if err != nil {
 			conn.Close()
@@ -129,20 +130,20 @@ func (this *Server) handleConnection(conn net.Conn) (cli *client, err error) {
 		return nil, ErrInvalidConnectionType
 	}
 
-	cli = &client{
+	c = &client{
 		server: this,
 		opts:   this.opts,
+		conn:   conn,
 	}
 
-	if err = cli.start(conn); err != nil {
+	if err = c.start(); err != nil {
 		return nil, err
 	}
 
 	return nil, nil
 }
 
-
-func (this *Server ) storePacket(message *packets.PublishPacket) {
+func (this *Server) storePacket(message *packets.PublishPacket) {
 	if message.Retain {
 		retain(message)
 	}
@@ -164,11 +165,11 @@ func (this *Server ) storePacket(message *packets.PublishPacket) {
 	}
 }
 
-func (this *Server ) deleteOfflinePacket(clientId string, messageId uint16) {
+func (this *Server) deleteOfflinePacket(clientId string, messageId uint16) {
 	this.store.DeleteOfflinePacket(clientId, messageId)
 }
 
-func (this *Server ) forwardMessage(message *packets.PublishPacket) {
+func (this *Server) forwardMessage(message *packets.PublishPacket) {
 	l, err := this.subhier.search(message.TopicName, message.Qos)
 	if err != nil {
 		return
@@ -176,30 +177,38 @@ func (this *Server ) forwardMessage(message *packets.PublishPacket) {
 
 	log.Debugf("forward message %v to topic %q, clients: %v", message.MessageID, message.TopicName, l.Len())
 
+//	published := make(map[string]bool)
 	for e := l.Front(); e != nil; e = e.Next() {
 		if sub, ok := e.Value.(*subscribe); ok {
+
 			cli := sub.client
 			qos := sub.qos
+
+//			if _, ok := published[cli.id]; ok {
+//				continue
+//			}
+//			published[cli.id] = true
+
 			if c, ok := this.clients[cli.id]; ok && !c.closed {
 				log.Debugf("forward message to %q, topic: %q, qos: %q, msgid: %q ", cli.id, message.TopicName, qos, message.MessageID)
-				cli.conn.Publish(message.TopicName, message.Payload, qos, message.MessageID, message.Retain)
+				cli.publish(message.TopicName, message.Payload, qos, message.MessageID, message.Retain)
 			}
 		}
 	}
 }
 
-func (this *Server ) forwardOfflineMessage(c *client) {
+func (this *Server) forwardOfflineMessage(c *client) {
 	if c.clean {
 		return
 	}
 	log.Infof("forward offline message of %q", c.id)
-	this.store.StreamOfflinePackets(c.id, func(message *packets.PublishPacket){
+	this.store.StreamOfflinePackets(c.id, func(message *packets.PublishPacket) {
 		log.Debugf("forward offline message to %q, topic: %q, qos: %q, msgid: %q ", c.id, message.TopicName, message.Qos, message.MessageID)
-		c.conn.Publish(message.TopicName, message.Payload, message.Qos, message.MessageID, message.Retain)
+		c.publish(message.TopicName, message.Payload, message.Qos, message.MessageID, message.Retain)
 	})
 }
 
-func (this *Server ) cleanSeassion(c *client) {
+func (this *Server) cleanSeassion(c *client) {
 	log.Debugf("clean session of %q", c.id)
 	this.subhier.clean(c)
 	this.store.CleanOfflinePacket(c.id)

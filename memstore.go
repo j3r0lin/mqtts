@@ -15,12 +15,15 @@ func newMemStore() *memstore {
 	}
 
 	go func() {
-		for _ = range time.Tick(time.Second) {
+//		for _ = range time.Tick(time.Second) {
+		for {
+
 			count := 0
 			for _, value := range store.messages {
 				count += len(value)
 			}
-			log.Debug("store messages ", count)
+			log.Debugf("store messages %v ", count)
+			time.Sleep(time.Second)
 		}
 	}()
 

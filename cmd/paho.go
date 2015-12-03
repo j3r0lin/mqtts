@@ -22,6 +22,6 @@ func main() {
 		pprof.Lookup("gorutine")
 		logrus.Println(http.ListenAndServe("0.0.0.0:6060", nil))
 	}()
-	server := mqtt.NewServer(&mqtt.ServerOpts{})
+	server := mqtt.NewServer(&mqtt.Options{})
 	logrus.Fatal(server.ListenAndServe("tcp://0.0.0.0:1883"))
 }

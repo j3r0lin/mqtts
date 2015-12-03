@@ -1,4 +1,4 @@
-package conn
+package mqtt
 
 import (
 	"errors"
@@ -7,7 +7,7 @@ import (
 	"reflect"
 )
 
-func (this *Connection) process() (err error) {
+func (this *client) process() (err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			err = errors.New("processor: panic")
@@ -22,18 +22,18 @@ func (this *Connection) process() (err error) {
 
 	for {
 		select {
-		case <- this.Dying():
-			return
 		case msg := <-this.in:
-			log.Debugf("processor(%v): new packet, id:%v, %v", this.id, msg.Details().MessageID, reflect.ValueOf(msg).Type())
+			log.Debugf("processor(%v): new packet, id:%v, %v", this.id, msg.Details().MessageID, reflect.TypeOf(msg))
 			if err = this.processPacket(msg); err != nil {
 				return
 			}
+		case <-this.Dying():
+			return
 		}
 	}
 }
 
-func (this *Connection) processPacket(msg packets.ControlPacket) (err error) {
+func (this *client) processPacket(msg packets.ControlPacket) (err error) {
 	switch msg.(type) {
 	case *packets.PublishPacket:
 		p := msg.(*packets.PublishPacket)
@@ -41,59 +41,53 @@ func (this *Connection) processPacket(msg packets.ControlPacket) (err error) {
 
 		switch p.Qos {
 		case 0:
-			if this.PublishHandler != nil {
-				this.PublishHandler(p)
-			}
+			this.handlePublish(p)
 		case 1:
 			if p.MessageID == 0 {
 				err = ErrMessageIdInvalid
 				break
 			}
-			err = this.Puback(p.MessageID)
-
-			if this.PublishHandler != nil {
-				this.PublishHandler(p)
-			}
+			err = this.puback(p.MessageID)
+			this.handlePublish(p)
 		case 2:
 			if p.MessageID == 0 {
 				err = ErrMessageIdInvalid
 				break
 			}
-			err = this.Pubrec(p.MessageID)
-			if this.PublishHandler != nil {
-				this.PublishHandler(p)
-			}
+			err = this.pubrec(p.MessageID)
+			this.handlePublish(p)
 		}
 	case *packets.PubackPacket:
-		if this.PubackHandler != nil {
-			p := msg.(*packets.PubackPacket)
-			err = this.PubackHandler(p.MessageID)
-		}
-	case *packets.PubrecPacket:
-		err = this.Pubrel(msg.Details().MessageID, false)
-	case *packets.PubrelPacket:
-		err = this.Pubcomp(msg.Details().MessageID)
-	case *packets.PubcompPacket:
+		this.handlePublished(msg.Details().MessageID)
 
+	case *packets.PubrecPacket:
+		err = this.pubrel(msg.Details().MessageID, false)
+
+	case *packets.PubrelPacket:
+		if err = this.pubcomp(msg.Details().MessageID); err == nil {
+//			this.handlePublish(cp)
+		}
+	case *packets.PubcompPacket:
+		this.handlePublished(msg.Details().MessageID)
 	case *packets.SubscribePacket:
 		p := msg.(*packets.SubscribePacket)
-		if this.SubscribeHandler != nil {
-			err = this.SubscribeHandler(p.MessageID, p.Topics, p.Qoss)
-		}
-	case *packets.SubackPacket:
+		this.handleSubscribe(p.MessageID, p.Topics, p.Qoss)
 
+//	case *packets.SubackPacket:
 	case *packets.UnsubscribePacket:
-
-	case *packets.UnsubackPacket:
+		p := msg.(*packets.UnsubscribePacket)
+		this.handleUnsubscribe(p.Topics)
+		err = this.unsuback(p.MessageID)
+//	case *packets.UnsubackPacket:
 
 	case *packets.PingreqPacket:
-		err = this.Pingresp()
-	case *packets.PingrespPacket:
+		err = this.pingresp()
+//	case *packets.PingrespPacket:
 
 	case *packets.DisconnectPacket:
 		return errors.New("Disconnect")
 	default:
-		return fmt.Errorf("processor(%v) invalid packets type %s.", this.id, reflect.ValueOf(msg).Type())
+		err = fmt.Errorf("invalid packets type %s.", reflect.TypeOf(msg))
 	}
 
 	if err != nil {

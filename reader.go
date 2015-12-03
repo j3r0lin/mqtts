@@ -1,4 +1,4 @@
-package conn
+package mqtt
 
 import (
 	"errors"
@@ -10,7 +10,7 @@ import (
 	"reflect"
 )
 
-func (this *Connection) reader() (err error) {
+func (this *client) reader() (err error) {
 	defer func() {
 		if r := recover(); r != nil && err == nil {
 			err = fmt.Errorf("reader panic %v", r)
@@ -21,7 +21,7 @@ func (this *Connection) reader() (err error) {
 	var cp packets.ControlPacket
 
 	for {
-		timeout := this.Opts.KeepAlive + (this.Opts.KeepAlive)/2
+		timeout := this.keepalive + (this.keepalive)/2
 		if cp, err = this.readPacket(timeout); err != nil {
 			switch err.(type) {
 			case net.Error:
@@ -59,7 +59,7 @@ func (this *Connection) reader() (err error) {
 }
 
 // read one message from stream
-func (this *Connection) readPacket(timeout time.Duration) (cp packets.ControlPacket, err error) {
+func (this *client) readPacket(timeout time.Duration) (cp packets.ControlPacket, err error) {
 	//	log.Debug("read packet with timeout ", timeout)
 	this.conn.SetReadDeadline(time.Now().Add(timeout))
 	cp, err = packets.ReadPacket(this.conn)
@@ -67,10 +67,10 @@ func (this *Connection) readPacket(timeout time.Duration) (cp packets.ControlPac
 	return
 }
 
-func (this *Connection) ReadConnectPacket() (p *packets.ConnectPacket, err error) {
+func (this *client) ReadConnectPacket() (p *packets.ConnectPacket, err error) {
 	var cp packets.ControlPacket
 	var ok bool
-	if cp, err = this.readPacket(this.Opts.ConnectTimeout); err == nil {
+	if cp, err = this.readPacket(this.opts.ConnectTimeout); err == nil {
 		if p, ok = cp.(*packets.ConnectPacket); !ok {
 			err = errors.New("connect message expected")
 		}

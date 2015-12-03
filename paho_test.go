@@ -20,17 +20,47 @@ func init() {
 		FullTimestamp: true,
 	})
 	logrus.SetLevel(logrus.DebugLevel)
+	server := NewServer(&Options{})
+	go func() {
+		err := server.ListenAndServe("tcp://localhost:1883")
+		if err != nil {
+			logrus.Fatal(err)
+		}
+	}()
+}
+
+func TestDulpConnect(t *testing.T) {
+	opts := mqtt.NewClientOptions()
+	opts.AddBroker("tcp://localhost:1883")
+	opts.SetClientID("123")
+	opts.AutoReconnect = false
+	opts.SetConnectionLostHandler(func(c *mqtt.Client, err error) {
+		logrus.Debug(err)
+	})
+
+	client1 := mqtt.NewClient(opts)
+	client2 := mqtt.NewClient(opts)
+	token := client1.Connect()
+	token.Wait()
+	assert.NoError(t, token.Error())
+	time.Sleep(time.Second)
+
+
+	token = client2.Connect()
+	token.Wait()
+	assert.NoError(t, token.Error())
+
+	token = client1.Publish("topic", 0, false, "hello")
+	token.WaitTimeout(time.Second)
+//	assert.Error(t, token.Error())
+	assert.False(t, client1.IsConnected())
+
 }
 
 func TestPub(t *testing.T) {
 	count := 10
 	g := sync.WaitGroup{}
 	g.Add(count)
-	server := NewServer(&ServerOpts{})
-	go func() {
-		err := server.ListenAndServe("tcp://localhost:1883")
-		assert.NoError(t, err)
-	}()
 
 	time.Sleep(time.Second)
 	//	runtime.GOMAXPROCS(1)

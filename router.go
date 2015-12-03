@@ -69,53 +69,57 @@ func newSubhier() *subhier {
 	}
 }
 
-func (this *subhier) subscribe(topic string, cli *client, qos byte) error {
-	if tokens, err := topicTokenise(topic); err != nil {
+// add subscribe to the tree, a subscribe include a topic filter, qos and client id
+func (this *subhier) subscribe(filter string, cli *client, qos byte) error {
+	if tokens, err := topicTokenise(filter); err != nil {
 		return err
 	} else {
 		return this.processSubscribe(tokens, cli, qos)
 	}
 }
 
-func (this *subhier) unsubscribe(topic string, cli *client) error {
-	if tokens, err := topicTokenise(topic); err != nil {
+// delete a subscribe by topic filter and client id
+func (this *subhier) unsubscribe(filter string, cli *client) error {
+	if tokens, err := topicTokenise(filter); err != nil {
 		return err
 	} else {
 		return this.processUnSubscribe(tokens, cli)
 	}
 }
 
-func (this *subhier) processSubscribe(paths []string, cli *client, qos byte) error {
-	if len(paths) == 0 {
+// internal subscribe method, tokens is the result of split topic filter. ie: ["a", "b", "c"] for topic filter "a/b/c"
+func (this *subhier) processSubscribe(tokens []string, cli *client, qos byte) error {
+	if len(tokens) == 0 {
 		this.subs.add(cli, qos)
 		return nil
 	}
 
-	path := paths[0]
+	token := tokens[0]
 
 	this.Lock()
-	if _, ok := this.routes[path]; !ok {
+	if _, ok := this.routes[token]; !ok {
 		hire := newSubhier()
-		this.routes[path] = hire
+		this.routes[token] = hire
 	}
 	this.Unlock()
 
-	return this.routes[path].processSubscribe(paths[1:], cli, qos)
+	return this.routes[token].processSubscribe(tokens[1:], cli, qos)
 }
 
-func (this *subhier) processUnSubscribe(paths []string, cli *client) error {
-	if len(paths) == 0 {
+func (this *subhier) processUnSubscribe(tokens []string, cli *client) error {
+	if len(tokens) == 0 {
 		this.subs.remove(cli)
 		return nil
 	}
 
-	path := paths[0]
-	if _, ok := this.routes[path]; ok {
-		return this.routes[path].processUnSubscribe(paths[1:], cli)
+	token := tokens[0]
+	if _, ok := this.routes[token]; ok {
+		return this.routes[token].processUnSubscribe(tokens[1:], cli)
 	}
 	return nil
 }
 
+// search the matched subscribe clients by topic name
 func (this *subhier) search(topic string, qos byte) (result *list.List, err error) {
 	tokens, err := topicTokenise(topic)
 	if err != nil {
@@ -126,53 +130,55 @@ func (this *subhier) search(topic string, qos byte) (result *list.List, err erro
 	return
 }
 
-func (this *subhier) match(paths []string, result *list.List) {
-	if len(paths) == 0 {
+func (this *subhier) match(tokens []string, result *list.List) {
+	if len(tokens) == 0 {
 		for _, sub := range this.subs.subs {
 			result.PushBack(sub)
 		}
 		return
 	}
 
-	path := paths[0]
+	path := tokens[0]
 
 	if wildcards, ok := this.routes["#"]; ok {
 		wildcards.match([]string{}, result)
 	}
 
 	if wildcards, ok := this.routes["+"]; ok {
-		wildcards.match(paths[1:], result)
+		wildcards.match(tokens[1:], result)
 	}
 
 	if _, ok := this.routes[path]; !ok {
 		return
 	}
 
-	this.routes[path].match(paths[1:], result)
+	this.routes[path].match(tokens[1:], result)
 }
 
+// split the topic name or topic filter to tokens, also validate topic rules.
 func topicTokenise(topic string) (tokens []string, err error) {
 	tokens = strings.Split(topic, "/")
 
 	for i, token := range tokens {
 		if token == "$" && i != 0 {
-			err = errors.New("$ must at the beginning")
+			err = errors.New("invalid topic filter, $ must at the beginning")
 			break
 		}
 
 		if token == "#" && i != len(tokens)-1 {
-			err = errors.New("# must at the ending")
+			err = errors.New("invalid topic filter, # must at the ending")
 			break
 		}
 
 		if strings.Contains(token, "+") && len(token) != 1 {
-			err = errors.New("bad topic")
+			err = errors.New("invalid topic filter")
 			break
 		}
 	}
 	return
 }
 
+// remove all subscriptions of a client
 func (this *subhier) clean(c *client) {
 	this.subs.remove(c)
 	for _, route := range this.routes {

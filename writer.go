@@ -1,4 +1,4 @@
-package conn
+package mqtt
 
 import (
 	"fmt"
@@ -8,7 +8,7 @@ import (
 	"reflect"
 )
 
-func (this *Connection) writer() (err error) {
+func (this *client) writer() (err error) {
 	defer func() {
 		if r := recover(); r != nil && err == nil {
 			err = fmt.Errorf("writer panic with %v", r)
@@ -24,7 +24,7 @@ func (this *Connection) writer() (err error) {
 			log.Debugf("writer(%v) sending message, msgid: %q", this.id, cp.Details().MessageID)
 			if err = this.writePacket(cp); err != nil {
 				if err != io.EOF {
-					log.Warnf("writer(%v) writting message to connection err, %v %q", this.id, err)
+					log.Warnf("writer(%v) writting message to connection err, %v", this.id, err)
 				}
 				return
 			}
@@ -35,23 +35,25 @@ func (this *Connection) writer() (err error) {
 
 }
 
-func (this *Connection) writePacket(p packets.ControlPacket) error {
+func (this *client) writePacket(p packets.ControlPacket) error {
 	if err := p.Write(this.conn); err != nil {
 		return err
 	}
 	return nil
 }
 
-func (this *Connection) Write(p packets.ControlPacket) error {
-	select {
-	case this.out <- p:
-	default:
-	}
+func (this *client) write(p packets.ControlPacket) error {
+//	select {
+//	case this.out <- p:
+//		log.Debugf("writer(%v): message %v sended to queue", this.id, reflect.TypeOf(p))
+//	default:
+//	}
+	this.out <- p
 	log.Debugf("writer(%v): message %v sended to queue", this.id, reflect.TypeOf(p))
 	return nil
 }
 
-func (this *Connection) Connack(returnCode byte, sessionPresent bool) error {
+func (this *client) connack(returnCode byte, sessionPresent bool) error {
 	p := packets.NewControlPacket(packets.Connack).(*packets.ConnackPacket)
 	p.ReturnCode = returnCode
 	if sessionPresent && returnCode == packets.Accepted {
@@ -60,14 +62,14 @@ func (this *Connection) Connack(returnCode byte, sessionPresent bool) error {
 	return this.writePacket(p)
 }
 
-func (this *Connection) Pingresp() error {
+func (this *client) pingresp() error {
 	p := packets.NewControlPacket(packets.Pingresp).(*packets.PingrespPacket)
-	return this.Write(p)
+	return this.write(p)
 }
 
 var globalMessageId uint64 = 1
 
-func (this *Connection) Publish(topic string, payload []byte, qos byte, messageId uint16, retain bool) error {
+func (this *client) publish(topic string, payload []byte, qos byte, messageId uint16, retain bool) error {
 	p := packets.NewControlPacket(packets.Publish).(*packets.PublishPacket)
 	p.TopicName = topic
 	p.Payload = payload
@@ -77,43 +79,43 @@ func (this *Connection) Publish(topic string, payload []byte, qos byte, messageI
 	}
 	p.MessageID = messageId
 	p.Retain = retain
-	return this.Write(p)
+	return this.write(p)
 }
 
-func (this *Connection) Puback(messageId uint16) error {
+func (this *client) puback(messageId uint16) error {
 	cp := packets.NewControlPacket(packets.Puback).(*packets.PubackPacket)
 	cp.MessageID = messageId
-	return this.Write(cp)
+	return this.write(cp)
 }
 
-func (this *Connection) Pubrec(messageId uint16) error {
+func (this *client) pubrec(messageId uint16) error {
 	cp := packets.NewControlPacket(packets.Pubrec).(*packets.PubrecPacket)
 	cp.MessageID = messageId
-	return this.Write(cp)
+	return this.write(cp)
 }
 
-func (this *Connection) Pubcomp(messageId uint16) error {
+func (this *client) pubcomp(messageId uint16) error {
 	cp := packets.NewControlPacket(packets.Pubcomp).(*packets.PubcompPacket)
 	cp.MessageID = messageId
-	return this.Write(cp)
+	return this.write(cp)
 }
 
-func (this *Connection) Pubrel(messageId uint16, dup bool) error {
+func (this *client) pubrel(messageId uint16, dup bool) error {
 	cp := packets.NewControlPacket(packets.Pubrel).(*packets.PubrelPacket)
 	cp.MessageID = messageId
 	cp.Dup = dup
-	return this.Write(cp)
+	return this.write(cp)
 }
 
-func (this *Connection) Unsuback(messageId uint16) error {
+func (this *client) unsuback(messageId uint16) error {
 	cp := packets.NewControlPacket(packets.Unsuback).(*packets.UnsubackPacket)
 	cp.MessageID = messageId
-	return this.Write(cp)
+	return this.write(cp)
 }
 
-func (this *Connection) Suback(messageId uint16, qoss []byte) error {
+func (this *client) suback(messageId uint16, qoss []byte) error {
 	cp := packets.NewControlPacket(packets.Suback).(*packets.SubackPacket)
 	cp.MessageID = messageId
 	cp.GrantedQoss = qoss
-	return this.Write(cp)
+	return this.write(cp)
 }

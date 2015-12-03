@@ -12,7 +12,7 @@ const (
 	DefaultTopicsProvider   = "mem"
 )
 
-type ServerOpts struct {
+type Options struct {
 	// The number of seconds to keep the connection live if there's no data.
 	// If not set then default to 5 mins.
 	KeepAlive time.Duration
