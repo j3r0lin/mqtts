@@ -6,12 +6,15 @@ import (
 	"testing"
 	"time"
 
+	"code.google.com/p/go-uuid/uuid"
 	"git.eclipse.org/gitroot/paho/org.eclipse.paho.mqtt.golang.git"
 	"github.com/Sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
-	"strings"
-	"code.google.com/p/go-uuid/uuid"
+	"net/http"
 	"runtime"
+	_ "net/http/pprof"
+	"runtime/pprof"
+	"strings"
 )
 
 func init() {
@@ -20,7 +23,11 @@ func init() {
 		FullTimestamp: true,
 	})
 	logrus.SetLevel(logrus.DebugLevel)
-	server := NewServer(&Options{})
+	server := NewServer(NewOptions())
+	go func() {
+		pprof.Lookup("gorutine")
+		logrus.Println(http.ListenAndServe("0.0.0.0:6060", nil))
+	}()
 	go func() {
 		err := server.ListenAndServe("tcp://localhost:1883")
 		if err != nil {
@@ -43,16 +50,15 @@ func TestDulpConnect(t *testing.T) {
 	token := client1.Connect()
 	token.Wait()
 	assert.NoError(t, token.Error())
-	time.Sleep(time.Second)
-
 
 	token = client2.Connect()
 	token.Wait()
 	assert.NoError(t, token.Error())
 
+	time.Sleep(time.Second)
 	token = client1.Publish("topic", 0, false, "hello")
 	token.WaitTimeout(time.Second)
-//	assert.Error(t, token.Error())
+	assert.Error(t, token.Error())
 	assert.False(t, client1.IsConnected())
 
 }
@@ -87,7 +93,7 @@ func TestPub(t *testing.T) {
 			opts.SetWill("/topic/will", "will message", 0, false)
 			client := mqtt.NewClient(opts)
 
-		CONN:
+			CONN:
 			token := client.Connect()
 			token.Wait()
 			if token.Error() != nil {
@@ -128,13 +134,12 @@ func TestConnectPacket(t *testing.T) {
 	log.Print(uint16(time.Second.Seconds()))
 }
 
-
 func TestMapSearch(t *testing.T) {
 
 	m := make(map[string]string, 10000)
 
 	var search string
-	for i := 0; i< 100000; i++ {
+	for i := 0; i < 100000; i++ {
 		id := uuid.New()
 		if i == 1 {
 			search = id
@@ -143,7 +148,7 @@ func TestMapSearch(t *testing.T) {
 	}
 
 	start := time.Now()
-	for i := 0; i< 1000000; i++ {
+	for i := 0; i < 1000000; i++ {
 		_ = m[search]
 	}
 	log.Println(float64(1000000) / time.Now().Sub(start).Seconds())

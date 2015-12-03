@@ -9,5 +9,6 @@ var (
 	ErrBufferInsufficientData error = errors.New("mqtt: buffer has insufficient data.")
 
 	ErrDisconnect       = errors.New("Disconnect")
+	ErrTakeOver         = errors.New("Takeover")
 	ErrMessageIdInvalid = errors.New("message id must > 0")
 )

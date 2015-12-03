@@ -132,9 +132,9 @@ func (this *client) waitConnect() (err error) {
 	this.server.clients[this.id] = this
 	this.server.Unlock()
 
-	log.Infof("client(%v) connect %q, %q, clean %v", this.id, cp.Username, string(cp.Password), this.clean)
+	log.Infof("client(%v) connect as %q, %q, clean %v, from %v", this.id, cp.Username, string(cp.Password), this.clean, this.address)
 	if this.clean {
-		this.server.cleanSeassion(this)
+		this.server.cleanSession(this)
 		this.connack(packets.Accepted, false)
 	} else {
 		this.connack(packets.Accepted, true)
@@ -155,7 +155,7 @@ func (this *client) handleDisconnect(err error) {
 	}
 	this.server.Unlock()
 	if this.clean {
-		this.server.cleanSeassion(this)
+		this.server.cleanSession(this)
 	}
 
 	this.closed = true
@@ -197,9 +197,9 @@ func (this *client) handleUnsubscribe(topics []string) error {
 func (this *client) handlePublish(message *packets.PublishPacket) error {
 	log.Debugf("client(%v) publish messge received, topic: %q, id: %q", this.id, message.TopicName, message.MessageID)
 
-		this.server.storePacket(message)
-		// forward message to all subscribers
-		this.server.forwardMessage(message)
+	this.server.storePacket(message)
+	// forward message to all subscribers
+	this.server.forwardMessage(message)
 
 	return nil
 }

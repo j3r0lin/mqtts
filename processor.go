@@ -13,7 +13,12 @@ func (this *client) process() (err error) {
 			err = errors.New("processor: panic")
 		}
 		log.Debugf("processor(%v) stopped, %v, %v", this.id, err, this.Err())
-		this.close()
+
+		go func() {
+			this.conn.Close()
+			this.Wait()
+			this.close()
+		}()
 	}()
 
 	for {
@@ -61,7 +66,7 @@ func (this *client) processPacket(msg packets.ControlPacket) (err error) {
 
 	case *packets.PubrelPacket:
 		if err = this.pubcomp(msg.Details().MessageID); err == nil {
-//			this.handlePublish(cp)
+			//			this.handlePublish(cp)
 		}
 	case *packets.PubcompPacket:
 		this.handlePublished(msg.Details().MessageID)
@@ -69,16 +74,16 @@ func (this *client) processPacket(msg packets.ControlPacket) (err error) {
 		p := msg.(*packets.SubscribePacket)
 		this.handleSubscribe(p.MessageID, p.Topics, p.Qoss)
 
-//	case *packets.SubackPacket:
+		//	case *packets.SubackPacket:
 	case *packets.UnsubscribePacket:
 		p := msg.(*packets.UnsubscribePacket)
 		this.handleUnsubscribe(p.Topics)
 		err = this.unsuback(p.MessageID)
-//	case *packets.UnsubackPacket:
+		//	case *packets.UnsubackPacket:
 
 	case *packets.PingreqPacket:
 		err = this.pingresp()
-//	case *packets.PingrespPacket:
+		//	case *packets.PingrespPacket:
 
 	case *packets.DisconnectPacket:
 		return errors.New("Disconnect")

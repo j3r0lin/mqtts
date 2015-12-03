@@ -1,13 +1,14 @@
 package mqtt
 
 import (
-	"git.eclipse.org/gitroot/paho/org.eclipse.paho.mqtt.golang.git/packets"
-	"github.com/Sirupsen/logrus"
 	"net"
 	"net/url"
 	"runtime"
 	"sync"
 	"time"
+
+	"git.eclipse.org/gitroot/paho/org.eclipse.paho.mqtt.golang.git/packets"
+	"github.com/Sirupsen/logrus"
 )
 
 var log = logrus.WithField("module", "mqtt")
@@ -36,22 +37,6 @@ type Server struct {
 func NewServer(opts *Options) *Server {
 	server := &Server{}
 	server.opts = opts
-
-	if opts.KeepAlive == 0 {
-		opts.KeepAlive = DefaultKeepAlive
-	}
-
-	if opts.ConnectTimeout == 0 {
-		opts.ConnectTimeout = DefaultConnectTimeout
-	}
-
-	if opts.AckTimeout == 0 {
-		opts.AckTimeout = DefaultAckTimeout
-	}
-
-	if opts.TimeoutRetries == 0 {
-		opts.TimeoutRetries = DefaultTimeoutRetries
-	}
 
 	server.quit = make(chan struct{})
 	server.clients = make(map[string]*client)
@@ -184,17 +169,17 @@ func (this *Server) forwardMessage(message *packets.PublishPacket) {
 
 	log.Debugf("forward message %v to topic %q, clients: %v", message.MessageID, message.TopicName, l.Len())
 
-//	published := make(map[string]bool)
+	//	published := make(map[string]bool)
 	for e := l.Front(); e != nil; e = e.Next() {
 		if sub, ok := e.Value.(*subscribe); ok {
 
 			cli := sub.client
 			qos := sub.qos
 
-//			if _, ok := published[cli.id]; ok {
-//				continue
-//			}
-//			published[cli.id] = true
+			//			if _, ok := published[cli.id]; ok {
+			//				continue
+			//			}
+			//			published[cli.id] = true
 
 			if c, ok := this.clients[cli.id]; ok && !c.closed {
 				log.Debugf("forward message to %q, topic: %q, qos: %q, msgid: %q ", cli.id, message.TopicName, qos, message.MessageID)
@@ -215,7 +200,7 @@ func (this *Server) forwardOfflineMessage(c *client) {
 	})
 }
 
-func (this *Server) cleanSeassion(c *client) {
+func (this *Server) cleanSession(c *client) {
 	log.Debugf("clean session of %q", c.id)
 	this.subhier.clean(c)
 	this.store.CleanOfflinePacket(c.id)

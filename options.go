@@ -42,3 +42,12 @@ type Options struct {
 	// If not set then default to "mem".
 	TopicsProvider string
 }
+
+func NewOptions() *Options {
+	return &Options{
+		KeepAlive: DefaultKeepAlive,
+		ConnectTimeout: DefaultConnectTimeout,
+		AckTimeout: DefaultAckTimeout,
+		TimeoutRetries: DefaultTimeoutRetries,
+	}
+}
