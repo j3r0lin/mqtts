@@ -42,15 +42,22 @@ func (this *client) writePacket(p packets.ControlPacket) error {
 	return nil
 }
 
-func (this *client) write(p packets.ControlPacket) error {
+func (this *client) write(p packets.ControlPacket) (err error) {
+	defer func(){
+		if r := recover(); r != nil {
+			err = ErrDisconnect
+		}
+	}()
+
 //	select {
 //	case this.out <- p:
 //		log.Debugf("writer(%v): message %v sended to queue", this.id, reflect.TypeOf(p))
 //	default:
 //	}
+	// we need to wait for pre message flushed if channel is full
 	this.out <- p
 	log.Debugf("writer(%v): message %v sended to queue", this.id, reflect.TypeOf(p))
-	return nil
+	return
 }
 
 func (this *client) connack(returnCode byte, sessionPresent bool) error {

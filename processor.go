@@ -13,11 +13,7 @@ func (this *client) process() (err error) {
 			err = errors.New("processor: panic")
 		}
 		log.Debugf("processor(%v) stopped, %v, %v", this.id, err, this.Err())
-		this.conn.Close()
-		go func() {
-			this.Wait()
-			this.close()
-		}()
+		this.close()
 	}()
 
 	for {

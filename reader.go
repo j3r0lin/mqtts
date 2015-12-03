@@ -6,8 +6,8 @@ import (
 	"git.eclipse.org/gitroot/paho/org.eclipse.paho.mqtt.golang.git/packets"
 	"io"
 	"net"
-	"time"
 	"reflect"
+	"time"
 )
 
 func (this *client) reader() (err error) {
@@ -39,23 +39,17 @@ func (this *client) reader() (err error) {
 		}
 		log.Debugf("reader(%v) new packet received, %v, queue len:%v", this.id, reflect.TypeOf(cp), len(this.in))
 
-		select {
-		case this.in <- cp:
-			break
-		default:
-			log.Warnf("reader(%v) queue full, drop message.", this.id)
-		}
 		if _, ok := cp.(*packets.DisconnectPacket); ok {
 			return ErrDisconnect
 		}
-	}
 
-	select {
-	case <-this.Dying():
-		return
-	default:
-		return
+		select {
+		case <-this.Dying():
+			return
+		case this.in <- cp:
+		}
 	}
+	return
 }
 
 // read one message from stream

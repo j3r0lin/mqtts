@@ -38,8 +38,8 @@ type client struct {
 func (this *client) start() (err error) {
 	this.Lock()
 	defer this.Unlock()
-	this.in = make(chan packets.ControlPacket, 1000)
-	this.out = make(chan packets.ControlPacket, 1000)
+	this.in = make(chan packets.ControlPacket)
+	this.out = make(chan packets.ControlPacket)
 
 	this.address = this.conn.RemoteAddr().String()
 	this.keepalive = this.opts.ConnectTimeout
@@ -138,7 +138,7 @@ func (this *client) waitConnect() (err error) {
 		this.connack(packets.Accepted, false)
 	} else {
 		this.connack(packets.Accepted, true)
-		this.server.forwardOfflineMessage(this)
+		go this.server.forwardOfflineMessage(this)
 	}
 
 	return nil
@@ -197,9 +197,10 @@ func (this *client) handleUnsubscribe(topics []string) error {
 func (this *client) handlePublish(message *packets.PublishPacket) error {
 	log.Debugf("client(%v) publish messge received, topic: %q, id: %q", this.id, message.TopicName, message.MessageID)
 
-	this.server.storePacket(message)
-	// forward message to all subscribers
-	this.server.forwardMessage(message)
+		this.server.storePacket(message)
+		// forward message to all subscribers
+		this.server.forwardMessage(message)
+
 	return nil
 }
 
