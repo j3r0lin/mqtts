@@ -10,6 +10,7 @@ var (
 
 	ErrDisconnect       = errors.New("Disconnect")
 	ErrRefusedClientId  = errors.New("refused client id")
+	ErrBadPacket        = errors.New("Bad packet")
 	ErrTakeOver         = errors.New("Takeover")
 	ErrMessageIdInvalid = errors.New("message id must > 0")
 )

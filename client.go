@@ -33,8 +33,6 @@ type client struct {
 	conn net.Conn
 	opts *Options
 
-	flight map[uint16]*packets.PublishPacket
-
 	in  chan packets.ControlPacket
 	out chan packets.ControlPacket
 }
@@ -165,14 +163,19 @@ func (this *client) handleDisconnect(err error) {
 
 func (this *client) handleSubscribe(msgid uint16, topics []string, qoss []byte) error {
 	for index, topic := range topics {
-		log.Debugf("client(%v) subscribe to %q qos %q", this.id, topic, qoss[index])
-		if err := this.server.subhier.subscribe(topic, this, qoss[index]); err != nil {
+		qos := qoss[index]
+		log.Debugf("client(%v) subscribe to %q qos %q", this.id, topic, qos)
+		if err := this.server.subhier.subscribe(topic, this, qos); err != nil {
 			log.Warnf("client(%v) sub to %q failed, %v, disconnecting", this.id, topic, err)
 			return err
 		}
-		matchRetain(topic, func(message *packets.PublishPacket) {
+		matchRetain(topic, func(m *packets.PublishPacket) {
+			// we should choose the min one as qos to send this message.
+			qos = minQoS(qos, m.Qos)
+
+			log.Debugf("client(%v) matched retain message, topic: %v, qos: %v, mid: %v", this.id, m.TopicName, qos, m.MessageID)
 			// for new subscribe client, the retained should be true.
-			this.publish(message.TopicName, message.Payload, message.Qos, true, message.Dup)
+			this.publish(m.TopicName, m.Payload, qos, true, m.Dup)
 		})
 	}
 	this.suback(msgid, qoss)
@@ -204,6 +207,6 @@ func (this *client) handlePublish(message *packets.PublishPacket) error {
 
 func (this *client) handlePublished(mid uint16) error {
 	this.server.mids.free(this.id, mid)
-	this.server.deleteOfflinePacket(this.id, mid)
+	this.server.store.DeleteOutboundPacket(this.id, mid)
 	return nil
 }

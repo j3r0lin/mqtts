@@ -9,6 +9,7 @@ import (
 
 	"git.eclipse.org/gitroot/paho/org.eclipse.paho.mqtt.golang.git/packets"
 	"github.com/Sirupsen/logrus"
+	"reflect"
 )
 
 var log = logrus.StandardLogger()
@@ -27,7 +28,7 @@ type Server struct {
 	// gracefully shut them down if they are still alive when the server goes down.
 	clients  *clients
 	offlines map[string]*client
-	store    Store
+	store    *store
 
 	subhier  *subhier
 	mids     *messageIds
@@ -42,7 +43,7 @@ func NewServer(opts *Options) *Server {
 	server.quit = make(chan struct{})
 	server.clients = newClients()
 	server.subhier = newSubhier()
-	server.store = newMemStore()
+	server.store = newStore()
 	server.mids = newMessageIds()
 
 	return server
@@ -95,9 +96,8 @@ func (this *Server) ListenAndServe(uri string) error {
 }
 
 func (this *Server) stat() error {
-	store := this.store.(*memstore)
 	for range time.Tick(time.Second) {
-		log.Infof("gorutines: %v, clients: %v, store: %v", runtime.NumGoroutine(), this.clients.len(), store.OfflineMessageLen())
+		log.Infof("gorutines: %v, clients: %v, store: %v", runtime.NumGoroutine(), this.clients.len(), this.store.OfflineMessageLen())
 	}
 	return nil
 }
@@ -127,7 +127,6 @@ func (this *Server) handleConnection(conn net.Conn) (c *client, err error) {
 }
 
 func (this *Server) deleteOfflinePacket(clientId string, messageId uint16) {
-	this.store.DeleteOfflinePacket(clientId, messageId)
 }
 
 func (this *Server) forwardMessage(message *packets.PublishPacket) {
@@ -159,7 +158,7 @@ func (this *Server) forwardMessage(message *packets.PublishPacket) {
 				p.Retain = false
 				p.Dup = message.Dup
 				p.MessageID = this.mids.request(cli.id)
-				this.store.StoreOfflinePacket(cli.id, p)
+				this.store.StoreOutboundPacket(cli.id, p)
 			}
 		}
 	}
@@ -170,9 +169,9 @@ func (this *Server) forwardOfflineMessage(c *client) {
 		return
 	}
 	log.Infof("forward offline message of %q", c.id)
-	this.store.StreamOfflinePackets(c.id, func(message *packets.PublishPacket) {
-		log.Debugf("forward offline message to %q, topic: %q, qos: %q", c.id, message.TopicName, message.Qos)
-		c.write(message)
+	this.store.StreamOfflinePackets(c.id, func(p packets.ControlPacket) {
+		log.Debugf("forward offline message to %q, type: %v, mid: %v", c.id, reflect.TypeOf(p), p.Details().MessageID)
+		c.write(p)
 	})
 }
 
@@ -180,5 +179,5 @@ func (this *Server) cleanSession(c *client) {
 	log.Debugf("clean session of %q", c.id)
 	this.subhier.clean(c)
 	this.mids.clean(c.id)
-	this.store.CleanOfflinePacket(c.id)
+	this.store.CleanPackets(c.id)
 }

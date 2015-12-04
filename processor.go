@@ -15,12 +15,11 @@ func (this *client) process() (err error) {
 		log.Debugf("processor(%v) stopped, %v, %v", this.id, err, this.Err())
 		go this.close()
 	}()
-	this.flight = make(map[uint16]*packets.PublishPacket)
 
 	for {
 		select {
 		case msg := <-this.in:
-			log.Debugf("processor(%v): new packet, id:%v, %v", this.id, msg.Details().MessageID, reflect.TypeOf(msg))
+			log.Debugf("processor(%v): new packet, mid:%v, %v", this.id, msg.Details().MessageID, reflect.TypeOf(msg))
 			if err = this.processPacket(msg); err != nil {
 				return
 			}
@@ -34,7 +33,7 @@ func (this *client) processPacket(msg packets.ControlPacket) (err error) {
 	switch msg.(type) {
 	case *packets.PublishPacket:
 		p := msg.(*packets.PublishPacket)
-		log.Debugf("processor(%v) new publish message, msgid: %q, topic: %q, qos: %q", this.id, p.MessageID, p.TopicName, p.Qos)
+		log.Debugf("processor(%v) new publish message, mid: %v, topic: %q, qos: %q", this.id, p.MessageID, p.TopicName, p.Qos)
 
 		switch p.Qos {
 		case 0:
@@ -51,7 +50,8 @@ func (this *client) processPacket(msg packets.ControlPacket) (err error) {
 				err = ErrMessageIdInvalid
 				break
 			}
-			this.flight[p.MessageID] = p
+			this.handlePublish(p)
+			this.server.store.StoreInboundPacket(this.id, p)
 			err = this.pubrec(p.MessageID)
 		}
 	case *packets.PubackPacket:
@@ -61,13 +61,11 @@ func (this *client) processPacket(msg packets.ControlPacket) (err error) {
 		err = this.pubrel(msg.Details().MessageID, false)
 
 	case *packets.PubrelPacket:
-		id := msg.Details().MessageID
-		if cp, ok := this.flight[id]; ok {
-			if err = this.pubcomp(id); err == nil {
-				this.handlePublish(cp)
-				delete(this.flight, id)
-			}
+		mid := msg.Details().MessageID
+		if err = this.pubcomp(mid); err != nil {
+			this.server.store.DeleteInboundPacket(this.id, mid)
 		}
+
 	case *packets.PubcompPacket:
 		this.handlePublished(msg.Details().MessageID)
 	case *packets.SubscribePacket:
