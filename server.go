@@ -11,7 +11,7 @@ import (
 	"github.com/Sirupsen/logrus"
 )
 
-var log = logrus.WithField("module", "mqtt")
+var log = logrus.StandardLogger()
 
 type Server struct {
 	sync.RWMutex
@@ -95,11 +95,7 @@ func (this *Server) ListenAndServe(uri string) error {
 func (this *Server) stat() error {
 	store := this.store.(*memstore)
 	for range time.Tick(time.Second) {
-		count := 0
-		for _, value := range store.messages {
-			count += len(value)
-		}
-		log.Infof("gorutines: %v, clients: %v, store: %v", runtime.NumGoroutine(), this.clients.len(), count)
+		log.Infof("gorutines: %v, clients: %v, store: %v", runtime.NumGoroutine(), this.clients.len(), store.OfflineMessageLen())
 	}
 	return nil
 }

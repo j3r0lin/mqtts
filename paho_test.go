@@ -56,8 +56,8 @@ func TestDulpConnect(t *testing.T) {
 	assert.NoError(t, token.Error())
 
 	time.Sleep(time.Second)
-	token = client1.Publish("topic", 0, false, "hello")
-	token.WaitTimeout(time.Second)
+	token = client1.Publish("topic", 2, false, "hello")
+	token.Wait()
 	assert.Error(t, token.Error())
 	assert.False(t, client1.IsConnected())
 
@@ -69,11 +69,7 @@ func TestPub(t *testing.T) {
 	g.Add(count)
 
 	time.Sleep(time.Second)
-	//	runtime.GOMAXPROCS(1)
-	//	mqtt.ERROR = glog.New(os.Stderr, "", 0)
-	//	mqtt.CRITICAL = glog.New(os.Stderr, "", 0)
-	//	mqtt.WARN = glog.New(os.Stderr, "", 0)
-	//	mqtt.DEBUG = glog.New(os.Stderr, "", 0)
+
 	for i := 0; i < count; i++ {
 		go func() {
 			defer func() {

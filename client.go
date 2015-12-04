@@ -27,8 +27,8 @@ type client struct {
 
 	server *Server
 
-	closed    bool
 	connected bool
+	stopOnce  sync.Once
 
 	conn net.Conn
 	opts *Options
@@ -48,13 +48,12 @@ func (this *client) start() (err error) {
 		this.conn.Close()
 		return
 	}
-
-	this.server.clients.add(this)
-
-	this.connected = true
 	this.Go(this.reader)
 	this.Go(this.writer)
 	this.Go(this.process)
+
+	this.connected = true
+	this.server.clients.add(this)
 
 	return
 }
@@ -65,29 +64,34 @@ func (this *client) stop() error {
 	defer this.Unlock()
 
 	log.Debugf("client(%v) stop called", this.id)
-	if this.connected && this.Alive() {
-		this.Kill(errors.New("shutdown"))
-		return this.Wait()
-	}
+//	if this.connected && this.Alive() {
+//		this.Kill(errors.New("shutdown"))
+//		return this.Wait()
+//	}
+//	this.close()
+	this.Kill(errors.New("shutdown"))
 	this.close()
 	return nil
 }
 
 // release all resources
 func (this *client) close() {
-	err := this.Err()
-	log.Debugf("conn(%v) closing %v", this.id, err)
-	this.conn.Close()
-	close(this.in)
-	close(this.out)
+	this.stopOnce.Do(func(){
+		this.conn.Close()
+		this.Wait()
+		err := this.Err()
+		log.Debugf("conn(%v) closing %v", this.id, err)
+		close(this.in)
+		close(this.out)
 
-	if err == io.EOF || err == io.ErrUnexpectedEOF {
-		log.Infof("conn(%v) client closed the connection", this.id)
-	} else {
-		log.Infof("conn(%v) client connection closed, %v", this.id, err)
-	}
+		if err == io.EOF || err == io.ErrUnexpectedEOF {
+			log.Infof("conn(%v) client closed the connection", this.id)
+		} else {
+			log.Infof("conn(%v) client connection closed, %v", this.id, err)
+		}
 
-	this.handleDisconnect(err)
+		this.handleDisconnect(err)
+	})
 }
 
 func (this *client) waitConnect() (err error) {
@@ -124,8 +128,6 @@ func (this *client) waitConnect() (err error) {
 		this.will = will
 	}
 
-
-
 	log.Infof("client(%v) connect as %q, %q, clean %v, from %v", this.id, cp.Username, string(cp.Password), this.clean, this.address)
 	if this.clean {
 		this.server.cleanSession(this)
@@ -144,16 +146,11 @@ func (this *client) handleDisconnect(err error) {
 	}
 
 	this.server.clients.delete(this)
-//	this.server.Lock()
-//	if this.server.clients[this.id] == this {
-//		delete(this.server.clients, this.id)
-//	}
-//	this.server.Unlock()
+
 	if this.clean {
 		this.server.cleanSession(this)
 	}
 
-	this.closed = true
 	this.connected = false
 
 	log.Infof("client(%v) disconnect, %v", this.id, err)
@@ -182,9 +179,7 @@ func (this *client) handleUnsubscribe(topics []string) error {
 			log.Warnf("client(%v) unsub to %q failed, %v, disconnecting", this.id, topic, err)
 			return err
 		}
-		//		this.topics = append(this.topics, topic)
-		//		for key, value := range this.topics {
-		//
+
 	}
 	return nil
 }

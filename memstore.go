@@ -77,3 +77,13 @@ func (this *memstore) CleanOfflinePacket(id string) {
 	defer this.Unlock()
 	delete(this.messages, id)
 }
+
+func (this *memstore ) OfflineMessageLen() int {
+	this.RLock()
+	defer this.RUnlock()
+	count := 0
+	for _, value := range this.messages {
+		count += len(value)
+	}
+	return count
+}
