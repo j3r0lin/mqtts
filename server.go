@@ -174,8 +174,8 @@ func (this *Server) forwardMessage(message *packets.PublishPacket) {
 			//			published[cli.id] = true
 
 			if c, ok := this.clients.get(cli.id); ok && c.connected {
-				log.Debugf("forward message to %q, topic: %q, qos: %q, msgid: %q ", cli.id, message.TopicName, qos, message.MessageID)
-				cli.publish(message.TopicName, message.Payload, qos, message.MessageID, message.Retain)
+				log.Debugf("forward message to %q, topic: %q, qos: %q", cli.id, message.TopicName, qos)
+				cli.publish(message.TopicName, message.Payload, qos, message.Retain, message.Dup)
 			}
 		}
 	}
@@ -187,8 +187,8 @@ func (this *Server) forwardOfflineMessage(c *client) {
 	}
 	log.Infof("forward offline message of %q", c.id)
 	this.store.StreamOfflinePackets(c.id, func(message *packets.PublishPacket) {
-		log.Debugf("forward offline message to %q, topic: %q, qos: %q, msgid: %q ", c.id, message.TopicName, message.Qos, message.MessageID)
-		c.publish(message.TopicName, message.Payload, message.Qos, message.MessageID, message.Retain)
+		log.Debugf("forward offline message to %q, topic: %q, qos: %q", c.id, message.TopicName, message.Qos)
+		c.publish(message.TopicName, message.Payload, message.Qos, message.Retain, message.Dup)
 	})
 }
 

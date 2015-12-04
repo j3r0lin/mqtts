@@ -5,12 +5,12 @@ import (
 	"fmt"
 	"git.eclipse.org/gitroot/paho/org.eclipse.paho.mqtt.golang.git/packets"
 	"golang.org/x/net/context"
-	"gopkg.in/mgo.v2/bson"
 	"gopkg.in/tomb.v2"
 	"io"
 	"net"
 	"sync"
 	"time"
+	"github.com/pborman/uuid"
 )
 
 type client struct {
@@ -20,10 +20,11 @@ type client struct {
 	id      string
 	address string
 
-	topics    []string
-	clean     bool
-	will      *packets.PublishPacket
-	keepalive time.Duration
+	topics     []string
+	messageIds *messageIds
+	clean      bool
+	will       *packets.PublishPacket
+	keepAlive  time.Duration
 
 	server *Server
 
@@ -42,9 +43,10 @@ type client struct {
 func (this *client) start() (err error) {
 	this.in = make(chan packets.ControlPacket)
 	this.out = make(chan packets.ControlPacket)
+	this.messageIds = newMessageIds()
 
 	this.address = this.conn.RemoteAddr().String()
-	this.keepalive = this.opts.ConnectTimeout
+	this.keepAlive = this.opts.ConnectTimeout
 	if err = this.waitConnect(); err != nil {
 		log.Debugf("client(%v) connect processing failed, %v", this.id, err)
 		this.conn.Close()
@@ -66,11 +68,11 @@ func (this *client) stop() error {
 	defer this.Unlock()
 
 	log.Debugf("client(%v) stop called", this.id)
-//	if this.connected && this.Alive() {
-//		this.Kill(errors.New("shutdown"))
-//		return this.Wait()
-//	}
-//	this.close()
+	//	if this.connected && this.Alive() {
+	//		this.Kill(errors.New("shutdown"))
+	//		return this.Wait()
+	//	}
+	//	this.close()
 	this.Kill(errors.New("shutdown"))
 	this.close()
 	return nil
@@ -78,7 +80,7 @@ func (this *client) stop() error {
 
 // release all resources
 func (this *client) close() {
-	this.stopOnce.Do(func(){
+	this.stopOnce.Do(func() {
 		this.conn.Close()
 		this.Wait()
 		err := this.Err()
@@ -109,14 +111,14 @@ func (this *client) waitConnect() (err error) {
 	}
 
 	if len(cp.ClientIdentifier) == 0 {
-		cp.ClientIdentifier = bson.NewObjectId().Hex()
+		cp.ClientIdentifier = uuid.New()
 	}
 
 	this.id = cp.ClientIdentifier
 	if cp.KeepaliveTimer != 0 {
-		this.keepalive = time.Duration(cp.KeepaliveTimer) * time.Second
+		this.keepAlive = time.Duration(cp.KeepaliveTimer) * time.Second
 	} else {
-		this.keepalive = this.opts.KeepAlive
+		this.keepAlive = this.opts.KeepAlive
 	}
 	this.clean = cp.CleanSession
 
@@ -167,7 +169,7 @@ func (this *client) handleSubscribe(msgid uint16, topics []string, qoss []byte) 
 		}
 		//		this.topics = append(this.topics, topic)
 		matchRetain(topic, func(message *packets.PublishPacket) {
-			this.publish(message.TopicName, message.Payload, message.Qos, message.MessageID, message.Retain)
+			this.publish(message.TopicName, message.Payload, message.Qos, message.Retain, message.Dup)
 		})
 	}
 	this.suback(msgid, qoss)
@@ -197,6 +199,7 @@ func (this *client) handlePublish(message *packets.PublishPacket) error {
 }
 
 func (this *client) handlePublished(messageId uint16) error {
+	this.messageIds.free(messageId)
 	this.server.deleteOfflinePacket(this.id, messageId)
 	return nil
 }

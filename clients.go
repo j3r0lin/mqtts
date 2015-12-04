@@ -18,7 +18,7 @@ func (this *clients) add(c *client) (dulp bool) {
 	defer this.Unlock()
 	if p, ok := this.m[c.id]; ok {
 		dulp = true
-		p.stop()
+		go p.stop()
 	}
 	this.m[c.id] = c
 	return

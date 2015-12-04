@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"git.eclipse.org/gitroot/paho/org.eclipse.paho.mqtt.golang.git/packets"
 	"io"
-	"sync/atomic"
 	"reflect"
 )
 
@@ -21,7 +20,7 @@ func (this *client) writer() (err error) {
 	for {
 		select {
 		case cp = <-this.out:
-			log.Debugf("writer(%v) sending message, msgid: %q", this.id, cp.Details().MessageID)
+			log.Debugf("writer(%v) sending message %v, id: %q", this.id, reflect.TypeOf(cp), cp.Details().MessageID)
 			if err = this.writePacket(cp); err != nil {
 				if err != io.EOF {
 					log.Warnf("writer(%v) writting message to connection err, %v", this.id, err)
@@ -56,7 +55,7 @@ func (this *client) write(p packets.ControlPacket) (err error) {
 //	}
 	// we need to wait for pre message flushed if channel is full
 	this.out <- p
-	log.Debugf("writer(%v): message %v sended to queue", this.id, reflect.TypeOf(p))
+	log.Debugf("writer(%v): message %v, id: %v sended to queue", this.id, reflect.TypeOf(p), p.Details().MessageID)
 	return
 }
 
@@ -74,18 +73,17 @@ func (this *client) pingresp() error {
 	return this.write(p)
 }
 
-var globalMessageId uint64 = 1
-
-func (this *client) publish(topic string, payload []byte, qos byte, messageId uint16, retain bool) error {
+func (this *client) publish(topic string, payload []byte, qos byte, retain bool, dup bool) error {
 	p := packets.NewControlPacket(packets.Publish).(*packets.PublishPacket)
 	p.TopicName = topic
 	p.Payload = payload
 	p.Qos = qos
-	if messageId == 0 && qos > 0 {
-		messageId = uint16(atomic.AddUint64(&globalMessageId, 1) & 0xffff)
-	}
-	p.MessageID = messageId
 	p.Retain = retain
+	p.Dup = dup
+
+	if qos > 0 {
+		p.MessageID = this.messageIds.use(p.UUID())
+	}
 	return this.write(p)
 }
 

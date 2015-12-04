@@ -127,13 +127,30 @@ func (this *subhier) search(topic string, qos byte) (result *list.List, err erro
 	}
 	result = list.New()
 	this.match(tokens, result)
+	//todo calculate real qos
+	for e := result.Front(); e != nil; e = e.Next() {
+		sub := e.Value.(*subscribe)
+		e.Value = &subscribe{sub.client, minQoS(sub.qos, qos)}
+	}
+
 	return
 }
 
 func (this *subhier) match(tokens []string, result *list.List) {
 	if len(tokens) == 0 {
 		for _, sub := range this.subs.subs {
-			result.PushBack(sub)
+			var found bool
+			for e := result.Front(); e != nil; e = e.Next() {
+				f := e.Value.(*subscribe)
+				if f.client.id == sub.client.id {
+					found = true
+					e.Value.(*subscribe).qos = maxQoS(sub.qos, f.qos)
+				}
+			}
+
+			if !found {
+				result.PushBack(sub)
+			}
 		}
 		return
 	}
@@ -165,7 +182,7 @@ func topicTokenise(topic string) (tokens []string, err error) {
 			break
 		}
 
-		if token == "#" && i != len(tokens)-1 {
+		if token == "#" && i != len(tokens) - 1 {
 			err = errors.New("invalid topic filter, # must at the ending")
 			break
 		}
@@ -184,4 +201,19 @@ func (this *subhier) clean(c *client) {
 	for _, route := range this.routes {
 		route.clean(c)
 	}
+}
+
+
+func minQoS(qos1, qos2 byte) byte{
+	if qos1 < qos2 {
+		return qos1
+	}
+	return qos2
+}
+
+func maxQoS(qos1, qos2 byte) byte{
+	if qos1 > qos2 {
+		return qos1
+	}
+	return qos2
 }

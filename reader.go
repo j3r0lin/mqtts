@@ -21,7 +21,7 @@ func (this *client) reader() (err error) {
 	var cp packets.ControlPacket
 
 	for {
-		timeout := this.keepalive + (this.keepalive)/2
+		timeout := this.keepAlive + (this.keepAlive)/2
 		if cp, err = this.readPacket(timeout); err != nil {
 			switch err.(type) {
 			case net.Error:

@@ -15,16 +15,19 @@ func TestRouter(t *testing.T) {
 	subhier.subscribe("a/+/c", &client{id: "1"}, 0)
 	subhier.subscribe("a/#", &client{id: "1"}, 0)
 	subhier.subscribe("a/b/#", &client{id: "1"}, 0)
-	subhier.subscribe("#", &client{id: "1"}, 0)
+	subhier.subscribe("/a", &client{id: "1"}, 0)
+	subhier.subscribe("/a", &client{id: "1"}, 1)
 
 
-	l, err := subhier.search("a/b/d/d", 0)
+	l, err := subhier.search("/a", 0)
 	assert.NoError(t, err)
-	assert.Equal(t, l.Len(), 3)
+	log.Println(l.Front().Value)
+	assert.Equal(t, l.Front().Value.(*subscribe).client.id, "1")
+	assert.Equal(t, l.Len(), 1)
 
 	l, err = subhier.search("a/b/c", 0)
 	assert.NoError(t, err)
-	assert.Equal(t, l.Len(), 5)
+	assert.Equal(t, l.Len(), 4)
 }
 
 func TestNewRouter(t *testing.T) {
