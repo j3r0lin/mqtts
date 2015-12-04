@@ -81,6 +81,7 @@ func (this *client) processPacket(msg packets.ControlPacket) (err error) {
 		//	case *packets.PingrespPacket:
 
 	case *packets.DisconnectPacket:
+		this.will = nil
 		return errors.New("Disconnect")
 	default:
 		err = fmt.Errorf("invalid packets type %s.", reflect.TypeOf(msg))

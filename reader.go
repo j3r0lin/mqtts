@@ -39,10 +39,6 @@ func (this *client) reader() (err error) {
 		}
 		log.Debugf("reader(%v) new packet received, %v, queue len:%v", this.id, reflect.TypeOf(cp), len(this.in))
 
-		if _, ok := cp.(*packets.DisconnectPacket); ok {
-			return ErrDisconnect
-		}
-
 		select {
 		case <-this.Dying():
 			return
