@@ -111,8 +111,13 @@ func (this *client) waitConnect() (err error) {
 	}
 
 	if len(cp.ClientIdentifier) == 0 {
+		if !cp.CleanSession {
+			this.connack(packets.ErrRefusedIDRejected, false)
+			return ErrRefusedClientId
+		}
 		cp.ClientIdentifier = uuid.New()
 	}
+
 
 	this.id = cp.ClientIdentifier
 	if cp.KeepaliveTimer != 0 {
