@@ -15,6 +15,7 @@ func (this *client) process() (err error) {
 		log.Debugf("processor(%v) stopped, %v, %v", this.id, err, this.Err())
 		go this.close()
 	}()
+	this.flight = make(map[uint16]*packets.PublishPacket)
 
 	for {
 		select {
@@ -50,8 +51,8 @@ func (this *client) processPacket(msg packets.ControlPacket) (err error) {
 				err = ErrMessageIdInvalid
 				break
 			}
+			this.flight[p.MessageID] = p
 			err = this.pubrec(p.MessageID)
-			this.handlePublish(p)
 		}
 	case *packets.PubackPacket:
 		this.handlePublished(msg.Details().MessageID)
@@ -60,8 +61,12 @@ func (this *client) processPacket(msg packets.ControlPacket) (err error) {
 		err = this.pubrel(msg.Details().MessageID, false)
 
 	case *packets.PubrelPacket:
-		if err = this.pubcomp(msg.Details().MessageID); err == nil {
-			//			this.handlePublish(cp)
+		id := msg.Details().MessageID
+		if cp, ok := this.flight[id]; ok {
+			if err = this.pubcomp(id); err == nil {
+				this.handlePublish(cp)
+				delete(this.flight, id)
+			}
 		}
 	case *packets.PubcompPacket:
 		this.handlePublished(msg.Details().MessageID)
@@ -69,16 +74,16 @@ func (this *client) processPacket(msg packets.ControlPacket) (err error) {
 		p := msg.(*packets.SubscribePacket)
 		this.handleSubscribe(p.MessageID, p.Topics, p.Qoss)
 
-		//	case *packets.SubackPacket:
+	//	case *packets.SubackPacket:
 	case *packets.UnsubscribePacket:
 		p := msg.(*packets.UnsubscribePacket)
 		this.handleUnsubscribe(p.Topics)
 		err = this.unsuback(p.MessageID)
-		//	case *packets.UnsubackPacket:
+	//	case *packets.UnsubackPacket:
 
 	case *packets.PingreqPacket:
 		err = this.pingresp()
-		//	case *packets.PingrespPacket:
+	//	case *packets.PingrespPacket:
 
 	case *packets.DisconnectPacket:
 		this.will = nil

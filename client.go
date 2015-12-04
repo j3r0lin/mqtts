@@ -33,6 +33,8 @@ type client struct {
 	conn net.Conn
 	opts *Options
 
+	flight map[uint16]*packets.PublishPacket
+
 	in  chan packets.ControlPacket
 	out chan packets.ControlPacket
 }
