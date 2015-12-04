@@ -82,7 +82,8 @@ func (this *client) publish(topic string, payload []byte, qos byte, retain bool,
 	p.Dup = dup
 
 	if qos > 0 {
-		p.MessageID = this.messageIds.use(p.UUID())
+		p.MessageID = this.server.mids.request(this.id)
+		this.server.store.StoreOfflinePacket(this.id, p)
 	}
 	return this.write(p)
 }

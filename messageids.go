@@ -1,14 +1,13 @@
 package mqtt
 
 import (
-	"github.com/pborman/uuid"
 	"sync"
 )
 
 type messageIds struct {
 	sync.RWMutex
 	//idChan chan uint16
-	index map[uint16]uuid.UUID
+	index map[string]map[uint16]interface{}
 }
 
 const (
@@ -18,17 +17,21 @@ const (
 
 func newMessageIds() *messageIds {
 	return &messageIds{
-		index: make(map[uint16]uuid.UUID),
+		index: make(map[string]map[uint16]interface{}),
 	}
 }
 
 // get one unused message id and mark it as used.
-func (m *messageIds) use(id uuid.UUID) uint16 {
+func (m *messageIds) request(cid string) uint16 {
 	m.Lock()
 	defer m.Unlock()
+	if _, ok := m.index[cid]; !ok {
+		m.index[cid] = make(map[uint16]interface{})
+	}
+
 	for i := msgIdMin; i < msgIdMax; i++ {
-		if m.index[i] == nil {
-			m.index[i] = id
+		if m.index[cid][i] == nil {
+			m.index[cid][i] = cid
 			return i
 		}
 	}
@@ -36,15 +39,26 @@ func (m *messageIds) use(id uuid.UUID) uint16 {
 }
 
 // check the given id is used or not
-func (m *messageIds) used(id uint16) bool {
+func (m *messageIds) used(cid string, mid uint16) bool {
 	m.RLock()
 	defer m.RUnlock()
-	return m.index[id] != nil
+	if _, ok := m.index[cid]; ok {
+		return m.index[cid][mid] != nil
+	}
+	return false
 }
 
 // release an id
-func (m *messageIds) free(id uint16) {
+func (m *messageIds) free(cid string, mid uint16) {
 	m.Lock()
 	defer m.Unlock()
-	m.index[id] = nil
+	if _, ok := m.index[cid]; ok {
+		delete(m.index[cid], mid)
+	}
+}
+
+func (m *messageIds) clean(cid string) {
+	m.Lock()
+	defer m.Unlock()
+	delete(m.index, cid)
 }

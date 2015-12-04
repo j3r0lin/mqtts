@@ -16,12 +16,12 @@ var log = logrus.StandardLogger()
 type Server struct {
 	sync.RWMutex
 
-	opts *Options
+	opts     *Options
 	// The quit channel for the server. If the server detects that this channel
 	// is closed, then it's a signal for it to shutdown as well.
-	quit chan struct{}
+	quit     chan struct{}
 
-	ln net.Listener
+	ln       net.Listener
 
 	// A list of services created by the server. We keep track of them so we can
 	// gracefully shut them down if they are still alive when the server goes down.
@@ -29,7 +29,8 @@ type Server struct {
 	offlines map[string]*client
 	store    Store
 
-	subhier *subhier
+	subhier  *subhier
+	mids     *messageIds
 
 	// Mutex for updating svcs
 }
@@ -42,6 +43,7 @@ func NewServer(opts *Options) *Server {
 	server.clients = newClients()
 	server.subhier = newSubhier()
 	server.store = newMemStore()
+	server.mids = newMessageIds()
 
 	return server
 }
@@ -124,31 +126,6 @@ func (this *Server) handleConnection(conn net.Conn) (c *client, err error) {
 	return nil, nil
 }
 
-func (this *Server) storePacket(message *packets.PublishPacket) {
-	if message.Retain {
-		retain(message)
-	}
-
-	if message.Qos != 0 {
-		l, err := this.subhier.search(message.TopicName, message.Qos)
-		if err != nil {
-			return
-		}
-		log.Debugf("store offline packet, found subs count %v", l.Len())
-
-		for e := l.Front(); e != nil; e = e.Next() {
-			if sub, ok := e.Value.(*subscribe); ok {
-				cli := sub.client
-				log.Debugf("sotre offline packet to %q", cli.id)
-				m := message.Copy()
-				m.Qos = sub.qos
-				m.MessageID = message.MessageID
-				this.store.StoreOfflinePacket(cli.id, m)
-			}
-		}
-	}
-}
-
 func (this *Server) deleteOfflinePacket(clientId string, messageId uint16) {
 	this.store.DeleteOfflinePacket(clientId, messageId)
 }
@@ -168,14 +145,21 @@ func (this *Server) forwardMessage(message *packets.PublishPacket) {
 			cli := sub.client
 			qos := sub.qos
 
-			//			if _, ok := published[cli.id]; ok {
-			//				continue
-			//			}
-			//			published[cli.id] = true
-
-			if c, ok := this.clients.get(cli.id); ok && c.connected {
+			if _, ok := this.clients.get(cli.id); ok {
 				log.Debugf("forward message to %q, topic: %q, qos: %q", cli.id, message.TopicName, qos)
-				cli.publish(message.TopicName, message.Payload, qos, message.Retain, message.Dup)
+				// It MUST set the RETAIN flag to 0 when a PUBLISH Packet is sent to a Client
+				// because it matches an established subscription regardless of
+				// how the flag was set in the message it received.
+				cli.publish(message.TopicName, message.Payload, qos, false, message.Dup)
+				return
+			}
+			if qos > 0 {
+				p := message.Copy()
+				p.Qos = qos
+				p.Retain = false
+				p.Dup = message.Dup
+				p.MessageID = this.mids.request(cli.id)
+				this.store.StoreOfflinePacket(cli.id, p)
 			}
 		}
 	}
@@ -188,12 +172,13 @@ func (this *Server) forwardOfflineMessage(c *client) {
 	log.Infof("forward offline message of %q", c.id)
 	this.store.StreamOfflinePackets(c.id, func(message *packets.PublishPacket) {
 		log.Debugf("forward offline message to %q, topic: %q, qos: %q", c.id, message.TopicName, message.Qos)
-		c.publish(message.TopicName, message.Payload, message.Qos, message.Retain, message.Dup)
+		c.write(message)
 	})
 }
 
 func (this *Server) cleanSession(c *client) {
 	log.Debugf("clean session of %q", c.id)
 	this.subhier.clean(c)
+	this.mids.clean(c.id)
 	this.store.CleanOfflinePacket(c.id)
 }

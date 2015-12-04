@@ -21,7 +21,6 @@ type client struct {
 	address string
 
 	topics     []string
-	messageIds *messageIds
 	clean      bool
 	will       *packets.PublishPacket
 	keepAlive  time.Duration
@@ -43,7 +42,6 @@ type client struct {
 func (this *client) start() (err error) {
 	this.in = make(chan packets.ControlPacket)
 	this.out = make(chan packets.ControlPacket)
-	this.messageIds = newMessageIds()
 
 	this.address = this.conn.RemoteAddr().String()
 	this.keepAlive = this.opts.ConnectTimeout
@@ -172,9 +170,9 @@ func (this *client) handleSubscribe(msgid uint16, topics []string, qoss []byte) 
 			log.Warnf("client(%v) sub to %q failed, %v, disconnecting", this.id, topic, err)
 			return err
 		}
-		//		this.topics = append(this.topics, topic)
 		matchRetain(topic, func(message *packets.PublishPacket) {
-			this.publish(message.TopicName, message.Payload, message.Qos, message.Retain, message.Dup)
+			// for new subscribe client, the retained should be true.
+			this.publish(message.TopicName, message.Payload, message.Qos, true, message.Dup)
 		})
 	}
 	this.suback(msgid, qoss)
@@ -195,16 +193,17 @@ func (this *client) handleUnsubscribe(topics []string) error {
 
 func (this *client) handlePublish(message *packets.PublishPacket) error {
 	log.Debugf("client(%v) publish messge received, topic: %q, id: %q", this.id, message.TopicName, message.MessageID)
-
-	this.server.storePacket(message)
 	// forward message to all subscribers
-	this.server.forwardMessage(message)
+	if message.Retain {
+		retain(message)
+	}
 
+	this.server.forwardMessage(message)
 	return nil
 }
 
-func (this *client) handlePublished(messageId uint16) error {
-	this.messageIds.free(messageId)
-	this.server.deleteOfflinePacket(this.id, messageId)
+func (this *client) handlePublished(mid uint16) error {
+	this.server.mids.free(this.id, mid)
+	this.server.deleteOfflinePacket(this.id, mid)
 	return nil
 }
