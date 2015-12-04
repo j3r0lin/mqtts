@@ -25,7 +25,7 @@ type Server struct {
 
 	// A list of services created by the server. We keep track of them so we can
 	// gracefully shut them down if they are still alive when the server goes down.
-	clients  map[string]*client
+	clients  *clients
 	offlines map[string]*client
 	store    Store
 
@@ -39,8 +39,7 @@ func NewServer(opts *Options) *Server {
 	server.opts = opts
 
 	server.quit = make(chan struct{})
-	server.clients = make(map[string]*client)
-	server.offlines = make(map[string]*client)
+	server.clients = newClients()
 	server.subhier = newSubhier()
 	server.store = newMemStore()
 
@@ -48,7 +47,6 @@ func NewServer(opts *Options) *Server {
 }
 
 func (this *Server) ListenAndServe(uri string) error {
-
 	u, err := url.Parse(uri)
 	if err != nil {
 		return err
@@ -64,7 +62,6 @@ func (this *Server) ListenAndServe(uri string) error {
 	go this.stat()
 
 	var tempDelay time.Duration // how long to sleep on accept failure
-
 	for {
 		conn, err := this.ln.Accept()
 
@@ -74,7 +71,6 @@ func (this *Server) ListenAndServe(uri string) error {
 				return nil
 			default:
 			}
-
 			// see http server
 			if ne, ok := err.(net.Error); ok && ne.Temporary() {
 				if tempDelay == 0 {
@@ -91,7 +87,6 @@ func (this *Server) ListenAndServe(uri string) error {
 			}
 			return err
 		}
-
 		go this.handleConnection(conn)
 	}
 	return nil
@@ -104,7 +99,7 @@ func (this *Server) stat() error {
 		for _, value := range store.messages {
 			count += len(value)
 		}
-		log.Infof("gorutines: %v, clients: %v, store: %v", runtime.NumGoroutine(), len(this.clients), count)
+		log.Infof("gorutines: %v, clients: %v, store: %v", runtime.NumGoroutine(), this.clients.len(), count)
 	}
 	return nil
 }
@@ -151,6 +146,7 @@ func (this *Server) storePacket(message *packets.PublishPacket) {
 				log.Debugf("sotre offline packet to %q", cli.id)
 				m := message.Copy()
 				m.Qos = sub.qos
+				m.MessageID = message.MessageID
 				this.store.StoreOfflinePacket(cli.id, m)
 			}
 		}
@@ -181,7 +177,7 @@ func (this *Server) forwardMessage(message *packets.PublishPacket) {
 			//			}
 			//			published[cli.id] = true
 
-			if c, ok := this.clients[cli.id]; ok && !c.closed {
+			if c, ok := this.clients.get(cli.id); ok && c.connected {
 				log.Debugf("forward message to %q, topic: %q, qos: %q, msgid: %q ", cli.id, message.TopicName, qos, message.MessageID)
 				cli.publish(message.TopicName, message.Payload, qos, message.MessageID, message.Retain)
 			}

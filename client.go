@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"git.eclipse.org/gitroot/paho/org.eclipse.paho.mqtt.golang.git/packets"
+	"golang.org/x/net/context"
 	"gopkg.in/mgo.v2/bson"
 	"gopkg.in/tomb.v2"
 	"io"
@@ -15,6 +16,7 @@ import (
 type client struct {
 	tomb.Tomb
 	sync.RWMutex
+	ctx     context.Context
 	id      string
 	address string
 
@@ -36,8 +38,6 @@ type client struct {
 }
 
 func (this *client) start() (err error) {
-	this.Lock()
-	defer this.Unlock()
 	this.in = make(chan packets.ControlPacket)
 	this.out = make(chan packets.ControlPacket)
 
@@ -48,6 +48,8 @@ func (this *client) start() (err error) {
 		this.conn.Close()
 		return
 	}
+
+	this.server.clients.add(this)
 
 	this.connected = true
 	this.Go(this.reader)
@@ -122,15 +124,7 @@ func (this *client) waitConnect() (err error) {
 		this.will = will
 	}
 
-	this.server.Lock()
-	if pre, ok := this.server.clients[this.id]; ok {
-		// todo: need to reuse session if both this connection and the first connection clean seassion are false
-		log.Infof("client(%v) already connect, closing first client %v", this.id, pre.address)
-		pre.stop()
-	}
 
-	this.server.clients[this.id] = this
-	this.server.Unlock()
 
 	log.Infof("client(%v) connect as %q, %q, clean %v, from %v", this.id, cp.Username, string(cp.Password), this.clean, this.address)
 	if this.clean {
@@ -149,11 +143,12 @@ func (this *client) handleDisconnect(err error) {
 		this.handlePublish(this.will)
 	}
 
-	this.server.Lock()
-	if this.server.clients[this.id] == this {
-		delete(this.server.clients, this.id)
-	}
-	this.server.Unlock()
+	this.server.clients.delete(this)
+//	this.server.Lock()
+//	if this.server.clients[this.id] == this {
+//		delete(this.server.clients, this.id)
+//	}
+//	this.server.Unlock()
 	if this.clean {
 		this.server.cleanSession(this)
 	}
