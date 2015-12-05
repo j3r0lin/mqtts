@@ -64,7 +64,7 @@ func TestDulpConnect(t *testing.T) {
 }
 
 func TestPub(t *testing.T) {
-	count := 10
+	count := 1
 	g := sync.WaitGroup{}
 	g.Add(count)
 
@@ -100,7 +100,7 @@ func TestPub(t *testing.T) {
 
 			log.Infoln("client connected", opts.ClientID)
 
-			token = client.Subscribe("a/b/d", 0, func(cli *mqtt.Client, msg mqtt.Message) {
+			token = client.Subscribe("#", 0, func(cli *mqtt.Client, msg mqtt.Message) {
 				log.Println("message received ", msg.Topic(), string(msg.Payload()))
 			})
 
@@ -111,13 +111,13 @@ func TestPub(t *testing.T) {
 			messages := 2
 			for _ = range make([]byte, messages) {
 				logrus.Debug("publish")
-				token = client.Publish("a/b/c", 2, false, "world")
+				token = client.Publish("", 2, false, "world")
 				token.Wait()
 				assert.NoError(t, token.Error(), "publish")
 				time.Sleep(time.Second)
 			}
 			client.Disconnect(3000)
-			log.Infoln(float64(messages) / time.Now().Sub(start).Seconds())
+			log.Infoln(float64(messages) / time.Since(start).Seconds())
 		}()
 	}
 

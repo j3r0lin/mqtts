@@ -64,7 +64,7 @@ func (this *store) storePacket(cid string, key string, message packets.ControlPa
 	switch message.(type){
 	case *packets.PublishPacket, *packets.PubrelPacket:
 	default:
-		return ErrBadPacket
+		return ErrInvalidPacket
 	}
 	this.Lock()
 	defer this.Unlock()

@@ -59,7 +59,7 @@ func (this *client) start() (err error) {
 }
 
 // shutdown the client when it's running
-func (this *client) stop() error {
+func (this *client) stop(err error) error {
 	this.Lock()
 	defer this.Unlock()
 
@@ -69,7 +69,10 @@ func (this *client) stop() error {
 	//		return this.Wait()
 	//	}
 	//	this.close()
-	this.Kill(errors.New("shutdown"))
+	if err == nil {
+		err = errors.New("shutdown")
+	}
+	this.Kill(err)
 	this.close()
 	return nil
 }

@@ -5,12 +5,13 @@ import (
 	"fmt"
 	"git.eclipse.org/gitroot/paho/org.eclipse.paho.mqtt.golang.git/packets"
 	"reflect"
+	"strings"
 )
 
 func (this *client) process() (err error) {
 	defer func() {
 		if r := recover(); r != nil {
-			err = errors.New("processor: panic")
+			err = fmt.Errorf("processor: panic, %v", r)
 		}
 		log.Debugf("processor(%v) stopped, %v, %v", this.id, err, this.Err())
 		go this.close()
@@ -33,6 +34,10 @@ func (this *client) processPacket(msg packets.ControlPacket) (err error) {
 	switch msg.(type) {
 	case *packets.PublishPacket:
 		p := msg.(*packets.PublishPacket)
+
+		if err = validateTopicAndQos(p.TopicName, p.Qos); err != nil {
+			return nil
+		}
 		log.Debugf("processor(%v) new publish message, mid: %v, topic: %q, qos: %q", this.id, p.MessageID, p.TopicName, p.Qos)
 
 		switch p.Qos {
@@ -40,14 +45,14 @@ func (this *client) processPacket(msg packets.ControlPacket) (err error) {
 			this.handlePublish(p)
 		case 1:
 			if p.MessageID == 0 {
-				err = ErrMessageIdInvalid
+				err = ErrInvalidMessageId
 				break
 			}
 			err = this.puback(p.MessageID)
 			this.handlePublish(p)
 		case 2:
 			if p.MessageID == 0 {
-				err = ErrMessageIdInvalid
+				err = ErrInvalidMessageId
 				break
 			}
 			this.handlePublish(p)
@@ -95,4 +100,26 @@ func (this *client) processPacket(msg packets.ControlPacket) (err error) {
 	}
 
 	return
+}
+
+func validateTopicAndQos(topic string, qos byte) error {
+	if len(topic) == 0 {
+		return ErrInvalidTopicEmptyString
+	}
+
+	if topic[0] == '$' {
+		return ErrInvalidTopicName
+	}
+
+	levels := strings.Split(topic, "/")
+	for i, level := range levels {
+		if level == "#" && i != len(levels)-1 {
+			return ErrInvalidTopicMultilevel
+		}
+	}
+
+	if qos < 0 || qos > 2 {
+		return ErrInvalidQoS
+	}
+	return nil
 }
