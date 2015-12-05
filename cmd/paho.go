@@ -3,9 +3,8 @@ import (
 	"bitbucket.org/j3r0lin/mqtt"
 	"github.com/Sirupsen/logrus"
 	"os"
-	"net/http"
 	_ "net/http/pprof"
-	"runtime/pprof"
+	"sync"
 )
 
 func init() {
@@ -18,10 +17,20 @@ func init() {
 
 
 func main() {
-	go func() {
-		pprof.Lookup("gorutine")
-		logrus.Println(http.ListenAndServe("0.0.0.0:6060", nil))
-	}()
+
+	wg := sync.WaitGroup{}
+	wg.Add(1)
 	server := mqtt.NewServer(mqtt.NewOptions())
-	logrus.Fatal(server.ListenAndServe("tcp://0.0.0.0:1883"))
+	go func() {
+		logrus.Fatal(server.ListenAndServe("tcp://0.0.0.0:1883"))
+		wg.Done()
+	}()
+
+	wg.Add(1)
+	go func() {
+		logrus.Fatal(server.ListenAndServeWebSocket(":8080"))
+		wg.Done()
+	}()
+
+	wg.Wait()
 }

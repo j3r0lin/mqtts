@@ -10,6 +10,8 @@ import (
 	"git.eclipse.org/gitroot/paho/org.eclipse.paho.mqtt.golang.git/packets"
 	"github.com/Sirupsen/logrus"
 	"reflect"
+"golang.org/x/net/websocket"
+"net/http"
 )
 
 var log = logrus.StandardLogger()
@@ -95,6 +97,33 @@ func (this *Server) ListenAndServe(uri string) error {
 	return nil
 }
 
+func (this *Server ) ListenAndServeWebSocket(uri string) error {
+	var server websocket.Server
+	//override the Websocket handshake to accept any protocol name
+	server.Handshake = func(c *websocket.Config, req *http.Request) error {
+		c.Origin, _ = url.Parse(req.RemoteAddr)
+		ver := req.Header.Get("Sec-WebSocket-Protocol")
+		c.Protocol = []string{ver}
+//		c.Version = 4
+		log.Debugf("websocket handshake: %v", c.Origin)
+		return nil
+	}
+	//set up the ws connection handler, ie what we do when we get a new websocket connection
+	server.Handler = func(ws *websocket.Conn) {
+		ws.PayloadType = websocket.BinaryFrame
+		log.Infof("New incoming websocket connection, %v", ws.RemoteAddr())
+//		INFO.Println("New incoming websocket connection", ws.RemoteAddr())
+//		listener.connections = append(listener.connections, ws)
+		this.handleConnection(ws)
+	}
+	//set the path that the http server will recognise as related to this websocket
+	//server, needs to be configurable really.
+	http.Handle("/", server)
+	//ListenAndServe loops forever receiving connections and initiating the handler
+	//for each one.
+	return http.ListenAndServe(uri, nil)
+}
+
 func (this *Server) stat() error {
 	for range time.Tick(time.Second) {
 		log.Infof("gorutines: %v, clients: %v, store: %v", runtime.NumGoroutine(), this.clients.len(), this.store.OfflineMessageLen())
@@ -122,6 +151,8 @@ func (this *Server) handleConnection(conn net.Conn) (c *client, err error) {
 	if err = c.start(); err != nil {
 		return nil, err
 	}
+
+	c.Wait()
 
 	return nil, nil
 }
