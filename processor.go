@@ -36,6 +36,11 @@ func (this *client) processPacket(msg packets.ControlPacket) (err error) {
 		p := msg.(*packets.PublishPacket)
 
 		if err = validateTopicAndQos(p.TopicName, p.Qos); err != nil {
+			// [MQTT-3.3.1-4] A PUBLISH Packet MUST NOT have both QoS bits set to 1. If a Server or Client receives a PUBLISH
+			// Packet which has both QoS bits set to 1 it MUST close the Network Connection
+			if err == ErrInvalidQoS {
+				return err
+			}
 			return nil
 		}
 		log.Debugf("processor(%v) new publish message, mid: %v, topic: %q, qos: %q", this.id, p.MessageID, p.TopicName, p.Qos)
