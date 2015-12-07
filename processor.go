@@ -42,6 +42,8 @@ func (this *client) processPacket(msg packets.ControlPacket) (err error) {
 
 		switch p.Qos {
 		case 0:
+			// [MQTT-3.3.1-2] the dup must be false if qos is 0
+			p.Dup = false
 			this.handlePublish(p)
 		case 1:
 			if p.MessageID == 0 {
