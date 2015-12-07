@@ -6,6 +6,7 @@ import (
 	"git.eclipse.org/gitroot/paho/org.eclipse.paho.mqtt.golang.git/packets"
 	"reflect"
 	"strings"
+	"unicode/utf8"
 )
 
 func (this *client) process() (err error) {
@@ -82,7 +83,23 @@ func (this *client) processPacket(msg packets.ControlPacket) (err error) {
 		this.handlePublished(msg.Details().MessageID)
 	case *packets.SubscribePacket:
 		p := msg.(*packets.SubscribePacket)
-		this.handleSubscribe(p.MessageID, p.Topics, p.Qoss)
+
+		if err = validateSubscriptions(p.Topics, p.Qoss); err != nil {
+			return err
+		}
+
+		qoss := make([]byte, len(p.Topics))
+		for index, topic := range p.Topics {
+			qos := p.Qoss[index]
+			if err = validateTopicAndQos(topic, qos); err != nil {
+				qoss[index] = 0x80
+				continue
+			}
+			this.handleSubscribe(p.MessageID, topic, qos)
+			qoss[index] = qos
+		}
+
+		this.suback(p.MessageID, qoss)
 
 	//	case *packets.SubackPacket:
 	case *packets.UnsubscribePacket:
@@ -109,22 +126,58 @@ func (this *client) processPacket(msg packets.ControlPacket) (err error) {
 	return
 }
 
+func validateSubscriptions(topics []string, qoss []byte) error {
+	if len(qoss) != len(topics) {
+		return ErrInvalidSubscriber
+	}
+
+	if len(topics) == 0 {
+		return ErrInvalidSubscriber
+	}
+	return nil
+}
+
 func validateTopicAndQos(topic string, qos byte) error {
+	if err := validateTopicFilter(topic); err != nil {
+		return nil
+	}
+	return validateQoS(qos)
+}
+
+func validateTopic(topic string) error {
 	if len(topic) == 0 {
 		return ErrInvalidTopicEmptyString
 	}
 
-	if topic[0] == '$' {
+	if utf8.ValidString(topic) == false {
+		return ErrInvalidTopicName
+	}
+	return nil
+}
+
+func validateTopicFilter(filter string) error {
+	if err := validateTopic(filter); err != nil {
+		return err
+	}
+
+	if filter[0] == '$' {
 		return ErrInvalidTopicName
 	}
 
-	levels := strings.Split(topic, "/")
+	levels := strings.Split(filter, "/")
 	for i, level := range levels {
 		if level == "#" && i != len(levels)-1 {
 			return ErrInvalidTopicMultilevel
 		}
-	}
 
+		if strings.Contains(level, "+") && len(level) != 1 {
+			return ErrInvalidTopicMultilevel
+		}
+	}
+	return nil
+}
+
+func validateQoS(qos byte) error {
 	if qos < 0 || qos > 2 {
 		return ErrInvalidQoS
 	}

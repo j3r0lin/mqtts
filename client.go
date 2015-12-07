@@ -16,25 +16,25 @@ import (
 type client struct {
 	tomb.Tomb
 	sync.RWMutex
-	ctx     context.Context
-	id      string
-	address string
+	ctx       context.Context
+	id        string
+	address   string
 
-	topics     []string
-	clean      bool
-	will       *packets.PublishPacket
-	keepAlive  time.Duration
+	topics    []string
+	clean     bool
+	will      *packets.PublishPacket
+	keepAlive time.Duration
 
-	server *Server
+	server    *Server
 
 	connected bool
 	stopOnce  sync.Once
 
-	conn net.Conn
-	opts *Options
+	conn      net.Conn
+	opts      *Options
 
-	in  chan packets.ControlPacket
-	out chan packets.ControlPacket
+	in        chan packets.ControlPacket
+	out       chan packets.ControlPacket
 }
 
 func (this *client) start() (err error) {
@@ -164,24 +164,20 @@ func (this *client) handleDisconnect(err error) {
 	log.Infof("client(%v) disconnect, %v", this.id, err)
 }
 
-func (this *client) handleSubscribe(msgid uint16, topics []string, qoss []byte) error {
-	for index, topic := range topics {
-		qos := qoss[index]
-		log.Debugf("client(%v) subscribe to %q qos %q", this.id, topic, qos)
-		if err := this.server.subhier.subscribe(topic, this, qos); err != nil {
-			log.Warnf("client(%v) sub to %q failed, %v, disconnecting", this.id, topic, err)
-			return err
-		}
-		matchRetain(topic, func(m *packets.PublishPacket) {
-			// we should choose the min one as qos to send this message.
-			qos = minQoS(qos, m.Qos)
-
-			log.Debugf("client(%v) matched retain message, topic: %v, qos: %v, mid: %v", this.id, m.TopicName, qos, m.MessageID)
-			// for new subscribe client, the retained should be true.
-			this.publish(m.TopicName, m.Payload, qos, true, m.Dup)
-		})
+func (this *client) handleSubscribe(msgid uint16, topic string, qos byte) error {
+	log.Debugf("client(%v) subscribe to %q qos %q", this.id, topic, qos)
+	if err := this.server.subhier.subscribe(topic, this, qos); err != nil {
+		log.Warnf("client(%v) sub to %q failed, %v, disconnecting", this.id, topic, err)
+		return err
 	}
-	this.suback(msgid, qoss)
+	matchRetain(topic, func(m *packets.PublishPacket) {
+		// we should choose the min one as qos to send this message.
+		qos = minQoS(qos, m.Qos)
+
+		log.Debugf("client(%v) matched retain message, topic: %v, qos: %v, mid: %v", this.id, m.TopicName, qos, m.MessageID)
+		// for new subscribe client, the retained should be true.
+		this.publish(m.TopicName, m.Payload, qos, true, m.Dup)
+	})
 	return nil
 }
 

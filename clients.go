@@ -13,11 +13,11 @@ func newClients() *clients {
 	}
 }
 
-func (this *clients) add(c *client) (dulp bool) {
+func (this *clients) add(c *client) (dup bool) {
 	this.Lock()
 	defer this.Unlock()
 	if p, ok := this.m[c.id]; ok {
-		dulp = true
+		dup = true
 		go p.stop(ErrTakeOver)
 	}
 	this.m[c.id] = c

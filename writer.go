@@ -110,7 +110,7 @@ func (this *client) pubrel(mid uint16, dup bool) error {
 	p := packets.NewControlPacket(packets.Pubrel).(*packets.PubrelPacket)
 	p.MessageID = mid
 	p.Dup = dup
-	this.server.store.DeleteOutboundPacket(this.id, mid)
+//	this.server.store.DeleteOutboundPacket(this.id, mid)
 	this.server.store.StoreInboundPacket(this.id, p)
 	return this.write(p)
 }
