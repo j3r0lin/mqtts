@@ -16,6 +16,7 @@ func (this *client) reader() (err error) {
 			err = fmt.Errorf("reader panic %v", r)
 		}
 		log.Debugf("reader(%v) stopped, %v, %v", this.id, err, this.Err())
+		go this.close()
 	}()
 
 	var cp packets.ControlPacket

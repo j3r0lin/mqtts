@@ -75,7 +75,8 @@ func (this *client) processPacket(msg packets.ControlPacket) (err error) {
 
 	case *packets.PubrelPacket:
 		mid := msg.Details().MessageID
-		if err = this.pubcomp(mid); err != nil {
+		err = this.pubcomp(mid)
+		if err == nil {
 			this.server.store.DeleteInboundPacket(this.id, mid)
 		}
 

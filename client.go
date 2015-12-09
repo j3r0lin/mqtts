@@ -81,11 +81,12 @@ func (this *client) stop(err error) error {
 func (this *client) close() {
 	this.stopOnce.Do(func() {
 		this.conn.Close()
+		close(this.in)
+		close(this.out)
+
 		this.Wait()
 		err := this.Err()
 		log.Debugf("conn(%v) closing %v", this.id, err)
-		close(this.in)
-		close(this.out)
 
 		if err == io.EOF || err == io.ErrUnexpectedEOF {
 			log.Infof("conn(%v) client closed the connection", this.id)

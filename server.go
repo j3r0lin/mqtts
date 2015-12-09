@@ -9,9 +9,9 @@ import (
 
 	"git.eclipse.org/gitroot/paho/org.eclipse.paho.mqtt.golang.git/packets"
 	"github.com/Sirupsen/logrus"
+	"golang.org/x/net/websocket"
+	"net/http"
 	"reflect"
-"golang.org/x/net/websocket"
-"net/http"
 )
 
 var log = logrus.StandardLogger()
@@ -19,12 +19,12 @@ var log = logrus.StandardLogger()
 type Server struct {
 	sync.RWMutex
 
-	opts     *Options
+	opts *Options
 	// The quit channel for the server. If the server detects that this channel
 	// is closed, then it's a signal for it to shutdown as well.
-	quit     chan struct{}
+	quit chan struct{}
 
-	ln       net.Listener
+	ln net.Listener
 
 	// A list of services created by the server. We keep track of them so we can
 	// gracefully shut them down if they are still alive when the server goes down.
@@ -32,8 +32,8 @@ type Server struct {
 	offlines map[string]*client
 	store    *store
 
-	subhier  *subhier
-	mids     *messageIds
+	subhier *subhier
+	mids    *messageIds
 
 	// Mutex for updating svcs
 }
@@ -97,14 +97,14 @@ func (this *Server) ListenAndServe(uri string) error {
 	return nil
 }
 
-func (this *Server ) ListenAndServeWebSocket(uri string) error {
+func (this *Server) ListenAndServeWebSocket(uri string) error {
 	var server websocket.Server
 	//override the Websocket handshake to accept any protocol name
 	server.Handshake = func(c *websocket.Config, req *http.Request) error {
 		c.Origin, _ = url.Parse(req.RemoteAddr)
 		ver := req.Header.Get("Sec-WebSocket-Protocol")
 		c.Protocol = []string{ver}
-//		c.Version = 4
+		//		c.Version = 4
 		log.Debugf("websocket handshake: %v", c.Origin)
 		return nil
 	}
@@ -112,8 +112,8 @@ func (this *Server ) ListenAndServeWebSocket(uri string) error {
 	server.Handler = func(ws *websocket.Conn) {
 		ws.PayloadType = websocket.BinaryFrame
 		log.Infof("New incoming websocket connection, %v", ws.RemoteAddr())
-//		INFO.Println("New incoming websocket connection", ws.RemoteAddr())
-//		listener.connections = append(listener.connections, ws)
+		//		INFO.Println("New incoming websocket connection", ws.RemoteAddr())
+		//		listener.connections = append(listener.connections, ws)
 		this.handleConnection(ws)
 	}
 	//set the path that the http server will recognise as related to this websocket
@@ -180,14 +180,14 @@ func (this *Server) forwardMessage(message *packets.PublishPacket) {
 				// It MUST set the RETAIN flag to 0 when a PUBLISH Packet is sent to a Client
 				// because it matches an established subscription regardless of
 				// how the flag was set in the message it received.
-				cli.publish(message.TopicName, message.Payload, qos, false, message.Dup)
+				cli.publish(message.TopicName, message.Payload, qos, false, false)
 				return
 			}
 			if qos > 0 {
 				p := message.Copy()
 				p.Qos = qos
 				p.Retain = false
-				p.Dup = message.Dup
+				p.Dup = false
 				p.MessageID = this.mids.request(cli.id)
 				this.store.StoreOutboundPacket(cli.id, p)
 			}

@@ -13,6 +13,7 @@ func (this *client) writer() (err error) {
 			err = fmt.Errorf("writer panic with %v", r)
 		}
 		log.Debugf("writer(%v) stopped, %v, %v", this.id, err, this.Err())
+		go this.close()
 	}()
 
 	var cp packets.ControlPacket
