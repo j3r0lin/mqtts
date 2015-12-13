@@ -63,8 +63,12 @@ func (this *client) processPacket(msg packets.ControlPacket) (err error) {
 				err = ErrInvalidMessageId
 				break
 			}
-			this.handlePublish(p)
-			this.server.store.StoreInboundPacket(this.id, p)
+
+			// ensure this packet is or not duplicate resend.
+			if this.server.store.FindInboundPacket(this.id, p.MessageID) == nil {
+				this.handlePublish(p)
+				this.server.store.StoreInboundPacket(this.id, p)
+			}
 			err = this.pubrec(p.MessageID)
 		}
 	case *packets.PubackPacket:
