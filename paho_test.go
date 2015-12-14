@@ -15,6 +15,7 @@ import (
 	_ "net/http/pprof"
 	"runtime/pprof"
 	"strings"
+	"git.eclipse.org/gitroot/paho/org.eclipse.paho.mqtt.golang.git/packets"
 )
 
 func init() {
@@ -23,6 +24,10 @@ func init() {
 		FullTimestamp: true,
 	})
 	logrus.SetLevel(logrus.DebugLevel)
+
+}
+
+func prepare() {
 	server := NewServer(NewOptions())
 	go func() {
 		pprof.Lookup("gorutine")
@@ -36,7 +41,8 @@ func init() {
 	}()
 }
 
-func TestDulpConnect(t *testing.T) {
+func TestDupConnect(t *testing.T) {
+	//	prepare()
 	opts := mqtt.NewClientOptions()
 	opts.AddBroker("tcp://localhost:1883")
 	opts.SetClientID("123")
@@ -63,7 +69,8 @@ func TestDulpConnect(t *testing.T) {
 
 }
 
-func TestPub(t *testing.T) {
+func TestPubBench(t *testing.T) {
+	//	prepare()
 	count := 1
 	g := sync.WaitGroup{}
 	g.Add(count)
@@ -152,4 +159,122 @@ func TestMapSearch(t *testing.T) {
 	stat := runtime.MemStats{}
 	runtime.ReadMemStats(&stat)
 	log.Println(stat.TotalAlloc, stat.Frees)
+}
+
+func BenchmarkPub(b *testing.B) {
+	opts := mqtt.NewClientOptions()
+	opts.AddBroker("tcp://localhost:1883")
+	opts.SetClientID("clientid")
+	//	opts.AutoReconnect = false
+	opts.SetConnectionLostHandler(func(c *mqtt.Client, err error) {
+		logrus.Debug(err)
+	})
+
+	client := mqtt.NewClient(opts)
+	token := client.Connect()
+	token.Wait()
+	assert.NoError(b, token.Error())
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		token := client.Publish("a/b/c", 2, false, "message payload")
+		token.Wait()
+	}
+}
+
+func BenchmarkMarshalPacket(b *testing.B) {
+	p := packets.NewControlPacket(packets.Publish).(*packets.PublishPacket)
+	p.TopicName = "a/b/c"
+	p.Payload = []byte("hello world")
+	for i := 0; i < b.N; i++ {
+		MarshalPacket(p)
+	}
+}
+
+func BenchmarkUnmarshalPacket(b *testing.B) {
+	p := packets.NewControlPacket(packets.Publish).(*packets.PublishPacket)
+	p.TopicName = "a/b/c"
+	p.Payload = []byte("hello world")
+	value := MarshalPacket(p)
+	for i := 0; i < b.N; i++ {
+		UnmarshalPacket(value)
+	}
+}
+
+
+func TestRetainPubSub(t *testing.T) {
+	opts := mqtt.NewClientOptions()
+	opts.AddBroker("tcp://localhost:1883")
+	//	opts.SetClientID("123")
+	opts.AutoReconnect = false
+	opts.SetConnectionLostHandler(func(c *mqtt.Client, err error) {
+		logrus.Debug(err)
+	})
+
+	client := mqtt.NewClient(opts)
+	token := client.Connect()
+	token.Wait()
+	assert.NoError(t, token.Error())
+
+	defer client.Disconnect(10)
+	token = client.Publish("topic/retain", 1, true, "retain message")
+	token.Wait()
+	assert.NoError(t, token.Error())
+
+	retained := 0
+	client.Subscribe("topic/retain", 1, func(c *mqtt.Client, m mqtt.Message) {
+		if m.Retained() {
+			assert.Equal(t, m.Topic(), "topic/retain")
+			assert.Equal(t, m.Payload(), []byte("retain message"))
+			retained++
+		}
+	})
+
+	time.Sleep(time.Second)
+	assert.Equal(t, retained, 1)
+
+	client.Unsubscribe("topic/retain").Wait()
+
+	client.Publish("topic/retain", 1, true, "").Wait()
+
+	retained = 0
+	client.Subscribe("topic/retain", 1, func(c *mqtt.Client, m mqtt.Message) {
+		log.Debugln(m.Topic(), string(m.Payload()))
+		if m.Retained() {
+			retained++
+		}
+	})
+
+	time.Sleep(time.Second)
+	assert.Equal(t, retained, 0)
+
+
+}
+
+
+func TestPubSub(t *testing.T) {
+	opts := mqtt.NewClientOptions()
+	opts.AddBroker("tcp://localhost:1883")
+	opts.SetClientID("clientid")
+	opts.AutoReconnect = true
+	opts.CleanSession = false
+
+	opts.SetConnectionLostHandler(func(c *mqtt.Client, err error) {
+		logrus.Debug(err)
+	})
+
+	client := mqtt.NewClient(opts)
+	client.Connect().Wait()
+
+	client.Subscribe("a/b/c", 2, func(c *mqtt.Client, m mqtt.Message) {
+		log.Debug(string(m.Payload()))
+	}).Wait()
+
+	go func() {
+		for _ = range time.Tick(time.Second) {
+			go client.Publish("a/b/c", 2, false, time.Now().String()).Wait()
+		}
+	}()
+
+	time.Sleep(100 * time.Second)
+
 }

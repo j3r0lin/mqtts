@@ -165,13 +165,13 @@ func (this *client) handleDisconnect(err error) {
 	log.Infof("client(%v) disconnect, %v", this.id, err)
 }
 
-func (this *client) handleSubscribe(msgid uint16, topic string, qos byte) error {
-	log.Debugf("client(%v) subscribe to %q qos %q", this.id, topic, qos)
-	if err := this.server.subhier.subscribe(topic, this, qos); err != nil {
-		log.Warnf("client(%v) sub to %q failed, %v, disconnecting", this.id, topic, err)
+func (this *client) handleSubscribe(mid uint16, filter string, qos byte) error {
+	log.Debugf("client(%v) subscribe to %q qos %q", this.id, filter, qos)
+	if err := this.server.subscribe(filter, this.id, qos); err != nil {
+		log.Warnf("client(%v) sub to %q failed, %v, disconnecting", this.id, filter, err)
 		return err
 	}
-	matchRetain(topic, func(m *packets.PublishPacket) {
+	this.server.matchRetain(filter, func(m *packets.PublishPacket) {
 		// we should choose the min one as qos to send this message.
 		qos = minQoS(qos, m.Qos)
 
@@ -185,7 +185,7 @@ func (this *client) handleSubscribe(msgid uint16, topic string, qos byte) error 
 func (this *client) handleUnsubscribe(topics []string) error {
 	for _, topic := range topics {
 		log.Debugf("client(%v) unsub to %q qos %q", this.id, topic)
-		if err := this.server.subhier.unsubscribe(topic, this); err != nil {
+		if err := this.server.unsubscribe(topic, this.id); err != nil {
 			log.Warnf("client(%v) unsub to %q failed, %v, disconnecting", this.id, topic, err)
 			return err
 		}
@@ -198,7 +198,7 @@ func (this *client) handlePublish(message *packets.PublishPacket) error {
 	log.Debugf("client(%v) publish messge received, topic: %q, id: %q", this.id, message.TopicName, message.MessageID)
 	// forward message to all subscribers
 	if message.Retain {
-		retain(message)
+		this.server.retainPacket(message)
 	}
 
 	this.server.forwardMessage(message)

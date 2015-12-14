@@ -39,7 +39,7 @@ func (this *clients) get(id string) (c *client, ok bool) {
 	return
 }
 
-func (this *clients) len() int {
+func (this *clients) size() int {
 	this.RLock()
 	defer this.RUnlock()
 	return len(this.m)

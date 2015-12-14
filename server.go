@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"fmt"
 	"git.eclipse.org/gitroot/paho/org.eclipse.paho.mqtt.golang.git/packets"
 	"github.com/Sirupsen/logrus"
 	"golang.org/x/net/websocket"
@@ -28,12 +29,12 @@ type Server struct {
 
 	// A list of services created by the server. We keep track of them so we can
 	// gracefully shut them down if they are still alive when the server goes down.
-	clients  *clients
-	offlines map[string]*client
-	store    *store
+	clients *clients
+	store   Store
 
 	subhier *subhier
 	mids    *messageIds
+	retains *retains
 
 	// Mutex for updating svcs
 }
@@ -45,8 +46,13 @@ func NewServer(opts *Options) *Server {
 	server.quit = make(chan struct{})
 	server.clients = newClients()
 	server.subhier = newSubhier()
-	server.store = newStore()
+	server.store = newLevelStore()
+	//	server.store = newMemoryStore()
 	server.mids = newMessageIds()
+	server.retains = newRetains()
+
+	server.reloadRetains()
+	server.reloadSubscriptions()
 
 	return server
 }
@@ -64,7 +70,7 @@ func (this *Server) ListenAndServe(uri string) error {
 	defer this.ln.Close()
 
 	log.Info("MQTT server listenning on ", uri)
-	go this.stat()
+	go this.state()
 
 	var tempDelay time.Duration // how long to sleep on accept failure
 	for {
@@ -124,9 +130,19 @@ func (this *Server) ListenAndServeWebSocket(uri string) error {
 	return http.ListenAndServe(uri, nil)
 }
 
-func (this *Server) stat() error {
+func (this *Server) state() error {
 	for range time.Tick(time.Second) {
-		log.Infof("gorutines: %v, clients: %v, store: %v", runtime.NumGoroutine(), this.clients.len(), this.store.OfflineMessageLen())
+		//		log.Infof("gorutines: %v, clients: %v, store: %v", runtime.NumGoroutine(), this.clients.size(), this.store.OfflineMessageLen())
+		s := "|-----------+-------------+----------+---------------+--------------+-------------|\n"
+		value := "Statistics\n" +
+			s +
+			"| Gorutines |   Clients   |   Subs   |   InPackets   |  OutPackets  |   Retains   |\n" +
+			s
+		value += fmt.Sprintf("| %9d | %11d | %8d | %13d | %12d | %11d |\n",
+			runtime.NumGoroutine(), this.clients.size(), this.subhier.size(), this.store.InPacketsSize(), this.store.OutPacketsSize(),
+			this.retains.size())
+		value += s
+		log.Info(value)
 	}
 	return nil
 }
@@ -157,11 +173,8 @@ func (this *Server) handleConnection(conn net.Conn) (c *client, err error) {
 	return nil, nil
 }
 
-func (this *Server) deleteOfflinePacket(clientId string, messageId uint16) {
-}
-
 func (this *Server) forwardMessage(message *packets.PublishPacket) {
-	l, err := this.subhier.search(message.TopicName, message.Qos)
+	l, err := this.subscribers(message.TopicName, message.Qos)
 	if err != nil {
 		return
 	}
@@ -172,15 +185,15 @@ func (this *Server) forwardMessage(message *packets.PublishPacket) {
 	for e := l.Front(); e != nil; e = e.Next() {
 		if sub, ok := e.Value.(*subscribe); ok {
 
-			cli := sub.client
+			cid := sub.cid
 			qos := sub.qos
 
-			if _, ok := this.clients.get(cli.id); ok {
-				log.Debugf("forward message to %q, topic: %q, qos: %q", cli.id, message.TopicName, qos)
+			if c, ok := this.clients.get(cid); ok {
+				log.Debugf("forward message to %q, topic: %q, qos: %q", cid, message.TopicName, qos)
 				// It MUST set the RETAIN flag to 0 when a PUBLISH Packet is sent to a Client
 				// because it matches an established subscription regardless of
 				// how the flag was set in the message it received.
-				cli.publish(message.TopicName, message.Payload, qos, false, false)
+				c.publish(message.TopicName, message.Payload, qos, false, false)
 				return
 			}
 			if qos > 0 {
@@ -188,8 +201,8 @@ func (this *Server) forwardMessage(message *packets.PublishPacket) {
 				p.Qos = qos
 				p.Retain = false
 				p.Dup = false
-				p.MessageID = this.mids.request(cli.id)
-				this.store.StoreOutboundPacket(cli.id, p)
+				p.MessageID = this.mids.request(cid)
+				this.store.StoreOutboundPacket(cid, p)
 			}
 		}
 	}
@@ -208,7 +221,7 @@ func (this *Server) forwardOfflineMessage(c *client) {
 
 func (this *Server) cleanSession(c *client) {
 	log.Debugf("clean session of %q", c.id)
-	this.subhier.clean(c)
+	this.cleanSubscriptions(c.id)
 	this.mids.clean(c.id)
 	this.store.CleanPackets(c.id)
 }

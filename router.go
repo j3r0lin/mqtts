@@ -8,8 +8,8 @@ import (
 )
 
 type subscribe struct {
-	client *client
-	qos    byte
+	cid string
+	qos byte
 }
 
 type subscribes struct {
@@ -21,40 +21,40 @@ func newSubscribes() *subscribes {
 	return &subscribes{subs: make(map[string]*subscribe)}
 }
 
-func (this *subscribes) add(client *client, qos byte) {
+func (this *subscribes) add(cid string, qos byte) {
 	this.Lock()
 	defer this.Unlock()
-	if sub, ok := this.subs[client.id]; ok {
+	if sub, ok := this.subs[cid]; ok {
 		sub.qos = qos
 	} else {
-		this.subs[client.id] = &subscribe{client, qos}
+		this.subs[cid] = &subscribe{cid, qos}
 	}
 }
 
-func (this *subscribes) remove(client *client) {
+func (this *subscribes) remove(cid string) {
 	this.Lock()
 	defer this.Unlock()
-	for _, sub := range this.subs {
-		if sub.client.id == client.id {
-			delete(this.subs, client.id)
-			break
-		}
-	}
+//	for _, sub := range this.subs {
+//		if sub.cid == cid {
+			delete(this.subs, cid)
+//			break
+//		}
+//	}
 }
 
-func (this *subscribes) len() int {
+func (this *subscribes) size() int {
 	this.RLock()
 	defer this.RUnlock()
 	return len(this.subs)
 }
 
-func (this *subscribes) forEach(callback func(*client, byte)) {
-	this.RLock()
-	defer this.RUnlock()
-	for _, sub := range this.subs {
-		go callback(sub.client, sub.qos)
-	}
-}
+//func (this *subscribes) forEach(callback func(string, byte)) {
+//	this.RLock()
+//	defer this.RUnlock()
+//	for _, sub := range this.subs {
+//		go callback(sub.cid, sub.qos)
+//	}
+//}
 
 type subhier struct {
 	sync.RWMutex
@@ -70,27 +70,60 @@ func newSubhier() *subhier {
 }
 
 // add subscribe to the tree, a subscribe include a topic filter, qos and client id
-func (this *subhier) subscribe(filter string, cli *client, qos byte) error {
+func (this *Server) subscribe(filter string, cid string, qos byte) error {
 	if tokens, err := topicTokenise(filter); err != nil {
 		return err
 	} else {
-		return this.processSubscribe(tokens, cli, qos)
+		this.store.StoreSubscription(filter, cid, qos)
+		return this.subhier.subscribe(tokens, cid, qos)
 	}
 }
 
 // delete a subscribe by topic filter and client id
-func (this *subhier) unsubscribe(filter string, cli *client) error {
+func (this *Server) unsubscribe(filter string, cid string) error {
 	if tokens, err := topicTokenise(filter); err != nil {
 		return err
 	} else {
-		return this.processUnSubscribe(tokens, cli)
+		this.store.DeleteSubscription(filter, cid)
+		return this.subhier.unsubscribe(tokens, cid)
 	}
 }
 
+// search the matched subscribe clients by topic name
+func (this *Server) subscribers(topic string, qos byte) (result *list.List, err error) {
+	tokens, err := topicTokenise(topic)
+	if err != nil {
+		return
+	}
+	result = list.New()
+	this.subhier.search(tokens, result)
+	//todo calculate real qos
+	for e := result.Front(); e != nil; e = e.Next() {
+		sub := e.Value.(*subscribe)
+		e.Value = &subscribe{sub.cid, minQoS(sub.qos, qos)}
+	}
+
+	return
+}
+
+func (this *Server) cleanSubscriptions(cid string) {
+	this.subhier.clean(cid)
+	this.store.CleanSubscription(cid)
+}
+
+func (this *Server) reloadSubscriptions() {
+	this.store.LookupSubscriptions(func(filter, cid string, qos byte){
+		tokens, _ := topicTokenise(filter)
+		log.Debugf("restore subscription, cid: %v, filter: %v, qos: %v", cid, filter, qos)
+		this.subhier.subscribe(tokens, cid, qos)
+	})
+}
+
+
 // internal subscribe method, tokens is the result of split topic filter. ie: ["a", "b", "c"] for topic filter "a/b/c"
-func (this *subhier) processSubscribe(tokens []string, cli *client, qos byte) error {
+func (this *subhier) subscribe(tokens []string, cid string, qos byte) error {
 	if len(tokens) == 0 {
-		this.subs.add(cli, qos)
+		this.subs.add(cid, qos)
 		return nil
 	}
 
@@ -103,46 +136,30 @@ func (this *subhier) processSubscribe(tokens []string, cli *client, qos byte) er
 	}
 	this.Unlock()
 
-	return this.routes[token].processSubscribe(tokens[1:], cli, qos)
+	return this.routes[token].subscribe(tokens[1:], cid, qos)
 }
 
-func (this *subhier) processUnSubscribe(tokens []string, cli *client) error {
+func (this *subhier) unsubscribe(tokens []string, cid string) error {
 	if len(tokens) == 0 {
-		this.subs.remove(cli)
+		this.subs.remove(cid)
 		return nil
 	}
 
 	token := tokens[0]
 	if _, ok := this.routes[token]; ok {
-		return this.routes[token].processUnSubscribe(tokens[1:], cli)
+		return this.routes[token].unsubscribe(tokens[1:], cid)
 	}
 	return nil
 }
 
-// search the matched subscribe clients by topic name
-func (this *subhier) search(topic string, qos byte) (result *list.List, err error) {
-	tokens, err := topicTokenise(topic)
-	if err != nil {
-		return
-	}
-	result = list.New()
-	this.match(tokens, result)
-	//todo calculate real qos
-	for e := result.Front(); e != nil; e = e.Next() {
-		sub := e.Value.(*subscribe)
-		e.Value = &subscribe{sub.client, minQoS(sub.qos, qos)}
-	}
 
-	return
-}
-
-func (this *subhier) match(tokens []string, result *list.List) {
+func (this *subhier) search(tokens []string, result *list.List) {
 	if len(tokens) == 0 {
 		for _, sub := range this.subs.subs {
 			var found bool
 			for e := result.Front(); e != nil; e = e.Next() {
 				f := e.Value.(*subscribe)
-				if f.client.id == sub.client.id {
+				if f.cid == sub.cid {
 					found = true
 					e.Value.(*subscribe).qos = maxQoS(sub.qos, f.qos)
 				}
@@ -158,18 +175,18 @@ func (this *subhier) match(tokens []string, result *list.List) {
 	path := tokens[0]
 
 	if wildcards, ok := this.routes["#"]; ok {
-		wildcards.match([]string{}, result)
+		wildcards.search([]string{}, result)
 	}
 
 	if wildcards, ok := this.routes["+"]; ok {
-		wildcards.match(tokens[1:], result)
+		wildcards.search(tokens[1:], result)
 	}
 
 	if _, ok := this.routes[path]; !ok {
 		return
 	}
 
-	this.routes[path].match(tokens[1:], result)
+	this.routes[path].search(tokens[1:], result)
 }
 
 // split the topic name or topic filter to tokens, also validate topic rules.
@@ -196,11 +213,21 @@ func topicTokenise(topic string) (tokens []string, err error) {
 }
 
 // remove all subscriptions of a client
-func (this *subhier) clean(c *client) {
-	this.subs.remove(c)
+func (this *subhier) clean(cid string) {
+	this.subs.remove(cid)
 	for _, route := range this.routes {
-		route.clean(c)
+		route.clean(cid)
 	}
+}
+
+func (this *subhier) size() int {
+	count := 0
+	count += this.subs.size()
+
+	for _, route := range this.routes {
+		count += route.size()
+	}
+	return count
 }
 
 
